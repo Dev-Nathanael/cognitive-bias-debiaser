@@ -1011,7 +1011,7 @@ Provide a summary highlighting the 3 most interesting patterns to explore togeth
                 } catch (error) {
                     setIsLoading(false);
                     setLoadingMessage('');
-                    setError(`❌ **Analysis Failed**\n\n${error.message}\n\nPlease check your API key and internet connection, then try again.`);
+                    setError(`**Analysis Failed**\n\n${error.message}\n\nPlease check your API key and internet connection, then try again.`);
                     setRetryAction(() => () => performInitialAnalysis());
                 }
             };
@@ -1963,7 +1963,7 @@ Type **1** or **2**.`);
                     // Option 2: Exit
                     setPhase('ended');
                     setCurrentInput('');
-                    addBotMessage("No problem! Come back when you're ready to work through a real decision. 👋");
+                    addBotMessage("No problem! Come back when you're ready to work through a real decision.");
 
                 } else {
                     // Invalid choice
@@ -2234,7 +2234,7 @@ Provide updated pattern observations (scores 0-1) and a summary celebrating the 
                 } catch (error) {
                     setIsLoading(false);
                     setLoadingMessage('');
-                    setError(`❌ **Re-analysis Failed**\n\n${error.message}\n\nPlease check your connection and try again.`);
+                    setError(`**Re-analysis Failed**\n\n${error.message}\n\nPlease check your connection and try again.`);
                     setRetryAction(() => () => performReanalysis(count));
                 }
             };

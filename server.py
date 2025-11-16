@@ -28,7 +28,7 @@ def index():
 def chat():
     """Proxy endpoint for Anthropic API calls"""
     try:
-        print('📨 Received chat request')
+        print('Received chat request')
 
         # Get request data from frontend
         data = request.get_json()
@@ -50,16 +50,16 @@ def chat():
                 response_data = response.json()
             except:
                 response_data = {'error': {'message': 'Failed to parse error response', 'type': 'parse_error'}}
-            print(f'❌ API Error: {response.status_code}', response_data)
+            print(f'API Error: {response.status_code}', response_data)
             return jsonify(response_data), response.status_code
 
         # Get response data for successful response
         response_data = response.json()
-        print('✅ API call successful')
+        print('API call successful')
         return jsonify(response_data)
 
     except Exception as e:
-        print(f'❌ Server error: {str(e)}')
+        print(f'Server error: {str(e)}')
         return jsonify({
             'error': {
                 'message': str(e),
@@ -77,13 +77,13 @@ def health():
 
 if __name__ == '__main__':
     print('\n' + '='*50)
-    print('🚀 Cognitive Debiasing Chatbot Server')
+    print('Cognitive Debiasing Chatbot Server')
     print('='*50)
-    print(f'✅ Server running on: http://localhost:3000')
-    print(f'✅ API proxy ready at: http://localhost:3000/api/chat')
-    print(f'✅ Health check: http://localhost:3000/health')
+    print(f'Server running on: http://localhost:3000')
+    print(f'API proxy ready at: http://localhost:3000/api/chat')
+    print(f'Health check: http://localhost:3000/health')
     print()
-    print('📝 Open http://localhost:3000 in your browser')
+    print('Open http://localhost:3000 in your browser')
     print('='*50 + '\n')
 
     app.run(host='0.0.0.0', port=3000, debug=False)

@@ -462,25 +462,25 @@
         // CONTEXT QUESTIONS (Phase 1) - Enhanced 15 questions that gather context AND detect biases naturally
         const CONTEXT_QUESTIONS = [
             // Questions 1-5: Decision Basics (Reveals Overconfidence + Anchoring)
-            { id: "decision_situation", question: "Tell me about the decision you're making. What's the situation?", type: "text" },
-            { id: "decision_type", question: "What type of decision is this - strategic, operational, investment, hiring, or something else?", type: "select", options: ["strategic", "operational", "investment", "hiring", "product", "other"] },
-            { id: "timeline", question: "Walk me through your timeline. When do you need to decide, and why that date?", type: "text" },
-            { id: "financial_commitment", question: "What's the financial commitment we're talking about?", type: "text" },
-            { id: "confidence_level", question: "On a scale of 0-10, how confident are you about this? What's making you feel that confident?", type: "text" },
+            { id: "decision_situation", question: "What decision are you making?", type: "text" },
+            { id: "decision_type", question: "What type of decision is this (strategic, operational, investment, hiring, or something else)?", type: "select", options: ["strategic", "operational", "investment", "hiring", "product", "other"] },
+            { id: "timeline", question: "When do you need to decide, and why that date in particular?", type: "text" },
+            { id: "financial_commitment", question: "What is the financial commitment?", type: "text" },
+            { id: "confidence_level", question: "On a scale of 0-10, how confident are you about this decision? Why?", type: "text" },
 
             // Questions 6-10: Experience & Stakeholders (Reveals Availability + Confirmation)
             { id: "past_experience", question: "Have you made a decision like this before? Tell me about that experience.", type: "text" },
-            { id: "stakeholders", question: "Who else is involved in this decision? Who cares about the outcome?", type: "text" },
-            { id: "advocates", question: "Is there someone who's really pushing for this? What's driving their enthusiasm?", type: "text" },
-            { id: "alternatives", question: "What other options have you seriously considered? Walk me through them.", type: "text" },
-            { id: "success_criteria", question: "How will you know if this was the right call? What does success look like?", type: "text" },
+            { id: "stakeholders", question: "Who are the stakeholders involved in the decision?", type: "text" },
+            { id: "advocates", question: "Who is really pushing for this decision? What's driving their enthusiasm?", type: "text" },
+            { id: "alternatives", question: "What other options have you seriously considered?", type: "text" },
+            { id: "success_criteria", question: "How do you know if this is the right call? What does success look like?", type: "text" },
 
             // Questions 11-15: Risks & Constraints (Reveals Loss Aversion + Anchoring)
-            { id: "biggest_concern", question: "What's your biggest concern about this decision?", type: "text" },
-            { id: "worst_realistic", question: "If things go wrong, what's the worst realistic outcome? Not catastrophic - realistic.", type: "text" },
+            { id: "biggest_concern", question: "What is your biggest concern about this decision?", type: "text" },
+            { id: "worst_realistic", question: "If things go wrong, what is the worst realistic outcome?", type: "text" },
             { id: "time_pressure", question: "Are you feeling rushed? What happens if you take more time?", type: "text" },
             { id: "authority", question: "Who ultimately signs off on this? Can they override you?", type: "text" },
-            { id: "change_mind", question: "What would make you completely change your mind about this?", type: "text" }
+            { id: "change_mind", question: "What would make you change your mind about this?", type: "text" }
         ];
 
         // Final Report Visualization Component
@@ -561,7 +561,7 @@
                 <div className="space-y-6 p-6">
                     {/* Summary Dashboard */}
                     <div className="bg-white rounded-lg shadow-lg p-6">
-                        <h2 className="text-2xl font-bold mb-6 text-gray-800">📊 Executive Summary</h2>
+                        <h2 className="text-2xl font-bold mb-6 text-gray-800">Executive Summary</h2>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg">
                                 <div className="text-sm text-blue-600 font-semibold mb-1">Overall Risk Level</div>
@@ -587,7 +587,7 @@
                         {/* Badges */}
                         <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <div className="text-sm font-semibold text-green-700 mb-2">🌟 Top 3 Explored Patterns:</div>
+                                <div className="text-sm font-semibold text-green-700 mb-2">Top 3 Explored Patterns:</div>
                                 <div className="flex flex-wrap gap-2">
                                     {metrics.improved.slice(0, 3).map(b => (
                                         <span key={b.name} className="badge badge-green">
@@ -599,7 +599,7 @@
                             </div>
 
                             <div>
-                                <div className="text-sm font-semibold text-blue-700 mb-2">💎 Top 3 Consistent Patterns:</div>
+                                <div className="text-sm font-semibold text-blue-700 mb-2">Top 3 Consistent Patterns:</div>
                                 <div className="flex flex-wrap gap-2">
                                     {metrics.persistent.slice(0, 3).map(b => (
                                         <span key={b.name} className="badge badge-blue">
@@ -614,7 +614,7 @@
 
                     {/* Bias Timeline Table */}
                     <div className="bg-white rounded-lg shadow-lg p-6">
-                        <h3 className="text-xl font-bold mb-4 text-gray-800">📈 Bias Evolution Timeline</h3>
+                        <h3 className="text-xl font-bold mb-4 text-gray-800">Bias Evolution Timeline</h3>
                         <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
@@ -653,7 +653,7 @@
 
                     {/* Before/After Comparison */}
                     <div className="bg-white rounded-lg shadow-lg p-6">
-                        <h3 className="text-xl font-bold mb-4 text-gray-800">📊 Before/After Comparison</h3>
+                        <h3 className="text-xl font-bold mb-4 text-gray-800">Before/After Comparison</h3>
                         <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
@@ -687,7 +687,7 @@
 
                     {/* Collapsible Checkpoint Cards */}
                     <div className="space-y-3">
-                        <h3 className="text-xl font-bold text-gray-800">📋 Detailed Checkpoints</h3>
+                        <h3 className="text-xl font-bold text-gray-800">Detailed Checkpoints</h3>
                         {checkpoints.map((cp, idx) => {
                             const isExpanded = expandedCheckpoint === idx;
                             const prevCheckpoint = idx > 0 ? checkpoints[idx - 1] : null;
@@ -711,7 +711,7 @@
                                         onClick={() => setExpandedCheckpoint(isExpanded ? null : idx)}
                                     >
                                         <div className="flex items-center gap-3">
-                                            <div className="text-2xl">📊</div>
+                                            <div className="text-2xl"></div>
                                             <div>
                                                 <div className="font-bold text-gray-800">{cp.stage}</div>
                                                 {idx > 0 && (
@@ -914,7 +914,7 @@
                 setSessionStartTime(Date.now());
 
                 setIsLoading(true);
-                setLoadingMessage('🧠 Exploring interesting patterns in your thinking...');
+                setLoadingMessage('Exploring interesting patterns in your thinking...');
                 setError(null);
 
                 try {
@@ -1003,7 +1003,7 @@ Provide a summary highlighting the 3 most interesting patterns to explore togeth
                     setIsLoading(false);
                     setLoadingMessage('');
 
-                    addBotMessage("✨ **Pattern Exploration Complete!**\n\nI've noticed some interesting patterns in your thinking. I'd love to explore these with you through a few questions - not to change your mind, but to help you gain awareness of your thought process.");
+                    addBotMessage("**Pattern Exploration Complete!**\n\nI've noticed some interesting patterns in your thinking. I'd love to explore these with you through a few questions - not to change your mind, but to help you gain awareness of your thought process.");
 
                     // Start debiasing (ask 1 question at a time, start with insight questions)
                     setTimeout(() => askDebiasingQuestions(analysis.biases, 'insight', null), 1000);
@@ -1502,7 +1502,7 @@ Return ONLY the synthesis question, no explanation.`;
 
             // Clear all data (with confirmation)
             const clearAllData = async () => {
-                if (confirm('⚠️ This will permanently delete all learning data, sessions, and analytics. Are you sure?')) {
+                if (confirm('This will permanently delete all learning data, sessions, and analytics. Are you sure?')) {
                     await dbHelpers.clearAll();
                     setQuestionStats({});
                     setSessions([]);
@@ -1513,7 +1513,7 @@ Return ONLY the synthesis question, no explanation.`;
                         top_questions: [],
                         effectiveness_over_time: []
                     });
-                    alert('✅ All data has been cleared.');
+                    alert('All data has been cleared.');
                 }
             };
 
@@ -1689,7 +1689,7 @@ Return ONLY this JSON format:
                 }
 
                 // Personalize the single question
-                setLoadingMessage('🎯 Tailoring question to your situation...');
+                setLoadingMessage('Tailoring question to your situation...');
                 const personalizedQuestions = await personalizeQuestions([selectedQuestion]);
 
                 setAskedQuestions(prev => [...prev, selectedQuestion.id]);
@@ -1725,7 +1725,7 @@ Return ONLY this JSON format:
                     if (checkAllResponsesForGibberish(first5Responses)) {
                         // Detected obvious gibberish - show error immediately
                         setTimeout(() => {
-                            addBotMessage(`⚠️ **I'm having trouble understanding your responses.**
+                            addBotMessage(`**I'm having trouble understanding your responses.**
 
 Your answers appear to contain random characters or gibberish (like "asdfgh" or "jkl;jkl;").
 
@@ -1819,7 +1819,7 @@ Type **1** or **2**.`);
 
                 // Check if follow-up is needed (unless we're at max depth)
                 if (currentQuestionDepth < 2) {
-                    setLoadingMessage('🤔 Analyzing your answer...');
+                    setLoadingMessage('Analyzing your answer...');
                     setIsLoading(true);
 
                     const followUp = await detectFollowUpNeed(questionText, currentAnswer, currentQuestionDepth);
@@ -1853,7 +1853,7 @@ Type **1** or **2**.`);
                 const mainAnswersCount = Object.keys(debiasingAnswers).length;
                 if (mainAnswersCount % 4 === 0 && mainAnswersCount > synthesisCount) {
                     setSynthesisCount(mainAnswersCount);
-                    setLoadingMessage('🧩 Connecting the dots...');
+                    setLoadingMessage('Connecting the dots...');
                     setIsLoading(true);
 
                     const synthesisQ = await generateSynthesisQuestion();
@@ -1997,7 +1997,7 @@ Type **1** or **2**.`);
 
                 // Show welcome back message
                 setTimeout(() => {
-                    addBotMessage("👋 **Welcome back!** I've restored your previous session. Let's continue where we left off.");
+                    addBotMessage("**Welcome back!** I've restored your previous session. Let's continue where we left off.");
                 }, 300);
             };
 
@@ -2026,7 +2026,7 @@ Type **1** or **2**.`);
 
             const performReanalysis = async (count) => {
                 setIsLoading(true);
-                setLoadingMessage('💭 Reflecting on your thinking patterns...');
+                setLoadingMessage('Reflecting on your thinking patterns...');
                 setCurrentInput('');
                 setError(null);
 
@@ -2318,7 +2318,7 @@ Provide updated pattern observations (scores 0-1) and a summary celebrating the 
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowAdminPanel(false)}>
                         <div className="bg-white rounded-lg shadow-xl p-6 max-w-4xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                             <div className="flex justify-between items-center mb-6">
-                                <h2 className="text-2xl font-bold text-gray-800">📊 Learning System Statistics</h2>
+                                <h2 className="text-2xl font-bold text-gray-800">Learning System Statistics</h2>
                                 <button onClick={() => setShowAdminPanel(false)} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
                             </div>
 
@@ -2340,7 +2340,7 @@ Provide updated pattern observations (scores 0-1) and a summary celebrating the 
 
                             {/* Cost Monitoring */}
                             <div className="mb-6 bg-gradient-to-br from-orange-50 to-yellow-50 border border-orange-200 rounded-lg p-4">
-                                <h3 className="text-lg font-semibold text-gray-800 mb-3">💰 API Cost Tracker</h3>
+                                <h3 className="text-lg font-semibold text-gray-800 mb-3">API Cost Tracker</h3>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <div className="text-sm text-gray-600 mb-1">Input Tokens</div>
@@ -2372,7 +2372,7 @@ Provide updated pattern observations (scores 0-1) and a summary celebrating the 
 
                             {/* Top Performing Questions */}
                             <div className="mb-6">
-                                <h3 className="text-lg font-semibold text-gray-800 mb-3">🏆 Top Performing Questions</h3>
+                                <h3 className="text-lg font-semibold text-gray-800 mb-3">Top Performing Questions</h3>
                                 <div className="bg-gray-50 rounded-lg p-4">
                                     {sortedQuestions.length === 0 ? (
                                         <p className="text-gray-500 text-center py-4">No data yet. Complete a session to start learning!</p>
@@ -2398,7 +2398,7 @@ Provide updated pattern observations (scores 0-1) and a summary celebrating the 
                             {/* Question Stats Details */}
                             {Object.keys(questionStats).length > 0 && (
                                 <div className="mb-6">
-                                    <h3 className="text-lg font-semibold text-gray-800 mb-3">📈 Effectiveness Trends</h3>
+                                    <h3 className="text-lg font-semibold text-gray-800 mb-3">Effectiveness Trends</h3>
                                     <div className="bg-gray-50 rounded-lg p-4 text-sm">
                                         {sortedQuestions.slice(0, 3).map(q => (
                                             <div key={q.id} className="mb-3 last:mb-0">
@@ -2425,13 +2425,13 @@ Provide updated pattern observations (scores 0-1) and a summary celebrating the 
                                     onClick={exportData}
                                     className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
                                 >
-                                    📥 Export Data for ML Training
+                                    Export Data for ML Training
                                 </button>
                                 <button
                                     onClick={clearAllData}
                                     className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"
                                 >
-                                    🗑️ Clear All Data
+                                    Clear All Data
                                 </button>
                             </div>
 
@@ -2458,7 +2458,7 @@ Provide updated pattern observations (scores 0-1) and a summary celebrating the 
                             className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition"
                             title="View Learning Statistics"
                         >
-                            📊 Stats
+                            Stats
                         </button>
                     </div>
 
@@ -2467,7 +2467,7 @@ Provide updated pattern observations (scores 0-1) and a summary celebrating the 
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                             <div className="bg-white rounded-lg shadow-2xl p-6 max-w-md mx-4">
                                 <div className="text-center mb-4">
-                                    <div className="text-4xl mb-2">💾</div>
+                                    <div className="text-4xl mb-2"></div>
                                     <h2 className="text-xl font-bold text-gray-800 mb-2">Welcome Back!</h2>
                                     <p className="text-gray-600">
                                         I found a previous session from {new Date(savedSessionData.timestamp).toLocaleTimeString()}.
@@ -2557,7 +2557,7 @@ Provide updated pattern observations (scores 0-1) and a summary celebrating the 
                                         }}
                                         className="w-full bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition font-medium"
                                     >
-                                        🔄 Retry Analysis
+                                        Retry Analysis
                                     </button>
                                 </div>
                             </div>
@@ -2585,7 +2585,7 @@ Provide updated pattern observations (scores 0-1) and a summary celebrating the 
                                         className="text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition font-medium"
                                         title="Skip remaining questions and view your summary now"
                                     >
-                                        ⏭️ Skip to Summary
+                                        Skip to Summary
                                     </button>
                                 </div>
                             )}
@@ -2634,7 +2634,7 @@ Provide updated pattern observations (scores 0-1) and a summary celebrating the 
                             )}
                             {phase === 'gibberish_detected' && (
                                 <div className="text-sm text-orange-600 mt-2 font-medium">
-                                    ⚠️ Waiting for your choice (1 or 2)
+                                    Waiting for your choice (1 or 2)
                                 </div>
                             )}
                         </div>

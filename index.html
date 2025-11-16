@@ -1,0 +1,2654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thinking Partner - Explore Your Decision Patterns</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script crossorigin src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script crossorigin src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <script crossorigin src="https://cdn.jsdelivr.net/npm/idb@7/build/umd.js"></script>
+    <!-- Recharts removed - using simple tables instead for better compatibility -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .chat-bubble {
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .progress-bar {
+            transition: width 0.5s ease-out;
+        }
+        .spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .markdown-content {
+            line-height: 1.6;
+        }
+        .markdown-content strong {
+            font-weight: 600;
+            color: #1f2937;
+        }
+        .markdown-content code {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        .checkpoint-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .checkpoint-card:hover {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .timeline-node {
+            transition: all 0.3s ease;
+        }
+        .timeline-node:hover {
+            transform: scale(1.2);
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge-green {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .badge-red {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .badge-yellow {
+            background: #fef3c7;
+            color: #92400e;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Ensure all CDN libraries are loaded before executing
+        (function checkLibraries() {
+            if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
+                console.log('Waiting for libraries to load... (React:', typeof React !== 'undefined', 'ReactDOM:', typeof ReactDOM !== 'undefined', ')');
+                return setTimeout(checkLibraries, 100);
+            }
+            console.log('All libraries loaded successfully! Starting app...');
+            startApp();
+        })();
+
+        function startApp() {
+        const { useState, useEffect, useRef } = React;
+        // Recharts removed - using simple table displays instead
+
+        // ============================================================================
+        // INDEXEDDB INITIALIZATION - Better storage than localStorage
+        // ============================================================================
+        let db;
+        const DB_NAME = 'DebiasingChatbotDB';
+        const DB_VERSION = 1;
+
+        // Initialize IndexedDB
+        const initDB = async () => {
+            if (!window.indexedDB) {
+                console.warn('IndexedDB not supported, falling back to localStorage');
+                return null;
+            }
+
+            try {
+                db = await idb.openDB(DB_NAME, DB_VERSION, {
+                    upgrade(db) {
+                        // Create object stores
+                        if (!db.objectStoreNames.contains('questionStats')) {
+                            db.createObjectStore('questionStats');
+                        }
+                        if (!db.objectStoreNames.contains('sessions')) {
+                            db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
+                        }
+                        if (!db.objectStoreNames.contains('analytics')) {
+                            db.createObjectStore('analytics');
+                        }
+                        console.log('IndexedDB initialized successfully');
+                    },
+                });
+
+                // Migrate from localStorage if data exists
+                await migrateFromLocalStorage();
+                return db;
+            } catch (error) {
+                console.error('IndexedDB initialization failed:', error);
+                return null;
+            }
+        };
+
+        // Migrate existing localStorage data to IndexedDB
+        const migrateFromLocalStorage = async () => {
+            try {
+                // Migrate questionStats
+                const storedStats = localStorage.getItem('questionStats');
+                if (storedStats && db) {
+                    const stats = JSON.parse(storedStats);
+                    await db.put('questionStats', stats, 'data');
+                    console.log('Migrated questionStats to IndexedDB');
+                }
+
+                // Migrate sessions
+                const storedSessions = localStorage.getItem('sessions');
+                if (storedSessions && db) {
+                    const sessions = JSON.parse(storedSessions);
+                    const tx = db.transaction('sessions', 'readwrite');
+                    for (const session of sessions) {
+                        await tx.store.add(session);
+                    }
+                    await tx.done;
+                    console.log('Migrated sessions to IndexedDB');
+                }
+
+                // Migrate analytics
+                const storedAnalytics = localStorage.getItem('analytics');
+                if (storedAnalytics && db) {
+                    const analytics = JSON.parse(storedAnalytics);
+                    await db.put('analytics', analytics, 'data');
+                    console.log('Migrated analytics to IndexedDB');
+                }
+
+                // Clear localStorage after successful migration
+                if (storedStats || storedSessions || storedAnalytics) {
+                    localStorage.removeItem('questionStats');
+                    localStorage.removeItem('sessions');
+                    localStorage.removeItem('analytics');
+                    console.log('Cleared old localStorage data');
+                }
+            } catch (error) {
+                console.error('Migration from localStorage failed:', error);
+            }
+        };
+
+        // IndexedDB helper functions
+        const dbHelpers = {
+            async getQuestionStats() {
+                if (!db) return {};
+                try {
+                    const stats = await db.get('questionStats', 'data');
+                    return stats || {};
+                } catch (error) {
+                    console.error('Error reading questionStats:', error);
+                    return {};
+                }
+            },
+
+            async setQuestionStats(stats) {
+                if (!db) {
+                    localStorage.setItem('questionStats', JSON.stringify(stats));
+                    return;
+                }
+                try {
+                    await db.put('questionStats', stats, 'data');
+                } catch (error) {
+                    console.error('Error saving questionStats:', error);
+                }
+            },
+
+            async getSessions() {
+                if (!db) return [];
+                try {
+                    const sessions = await db.getAll('sessions');
+                    return sessions || [];
+                } catch (error) {
+                    console.error('Error reading sessions:', error);
+                    return [];
+                }
+            },
+
+            async addSession(session) {
+                if (!db) {
+                    const stored = localStorage.getItem('sessions');
+                    const sessions = stored ? JSON.parse(stored) : [];
+                    sessions.push(session);
+                    const sessionsToKeep = sessions.slice(-100);
+                    localStorage.setItem('sessions', JSON.stringify(sessionsToKeep));
+                    return;
+                }
+                try {
+                    await db.add('sessions', session);
+
+                    // Keep only last 100 sessions
+                    const allSessions = await db.getAll('sessions');
+                    if (allSessions.length > 100) {
+                        const tx = db.transaction('sessions', 'readwrite');
+                        const oldestSessions = allSessions.slice(0, allSessions.length - 100);
+                        for (const session of oldestSessions) {
+                            await tx.store.delete(session.id);
+                        }
+                        await tx.done;
+                    }
+                } catch (error) {
+                    console.error('Error saving session:', error);
+                }
+            },
+
+            async getAnalytics() {
+                if (!db) {
+                    const stored = localStorage.getItem('analytics');
+                    return stored ? JSON.parse(stored) : {
+                        total_sessions: 0,
+                        successful_sessions: 0,
+                        avg_questions_asked: 0,
+                        avg_bias_reduction: 0
+                    };
+                }
+                try {
+                    const analytics = await db.get('analytics', 'data');
+                    return analytics || {
+                        total_sessions: 0,
+                        successful_sessions: 0,
+                        avg_questions_asked: 0,
+                        avg_bias_reduction: 0
+                    };
+                } catch (error) {
+                    console.error('Error reading analytics:', error);
+                    return {
+                        total_sessions: 0,
+                        successful_sessions: 0,
+                        avg_questions_asked: 0,
+                        avg_bias_reduction: 0
+                    };
+                }
+            },
+
+            async setAnalytics(analytics) {
+                if (!db) {
+                    localStorage.setItem('analytics', JSON.stringify(analytics));
+                    return;
+                }
+                try {
+                    await db.put('analytics', analytics, 'data');
+                } catch (error) {
+                    console.error('Error saving analytics:', error);
+                }
+            },
+
+            async clearAll() {
+                if (!db) {
+                    localStorage.removeItem('questionStats');
+                    localStorage.removeItem('sessions');
+                    localStorage.removeItem('analytics');
+                    return;
+                }
+                try {
+                    const tx = db.transaction(['questionStats', 'sessions', 'analytics'], 'readwrite');
+                    await tx.objectStore('questionStats').clear();
+                    await tx.objectStore('sessions').clear();
+                    await tx.objectStore('analytics').clear();
+                    await tx.done;
+                    console.log('All data cleared from IndexedDB');
+                } catch (error) {
+                    console.error('Error clearing data:', error);
+                }
+            }
+        };
+
+        // Initialize database on app start
+        initDB();
+
+        // ============================================================================
+        // DEBIASING APPROACH CONFIGURATION
+        // ============================================================================
+        const DEBIASING_CONFIG = {
+            approach: "exploratory", // not "corrective"
+            success_metric: "awareness", // not "behavior_change"
+            tone: "curious_neutral", // not "analytical_critical"
+            respect_expertise: true,
+            allow_maintained_positions: true,
+            measure_success_by: ["awareness_gained", "patterns_recognized", "nuance_developed", "assumptions_articulated"]
+        };
+
+        // ============================================================================
+        // GIBBERISH DETECTION - Client-side pre-check (catches obvious cases)
+        // ============================================================================
+        const quickGibberishCheck = (text) => {
+            if (!text || text.length < 2) return false; // Allow short answers
+
+            // Legitimate short responses that should NOT be flagged
+            const legitimateShortAnswers = /^(yes|no|tbd|na|n\/a|unknown|unsure|not sure|maybe|idk|i don't know)$/i;
+            if (legitimateShortAnswers.test(text.trim())) {
+                return false;
+            }
+
+            // Check 1: Keyboard mashing patterns (common gibberish)
+            const keyboardMashing = /^[qweasdzxc]{5,}$/i.test(text) ||
+                                  /^[asdf]{5,}$/i.test(text) ||
+                                  /^[jkl;]{5,}$/i.test(text) ||
+                                  /^[qwertyuiop]{5,}$/i.test(text);
+
+            // Check 2: Repeated characters (aaaaa, jjjjj, lololol)
+            const repeatedChars = /(.)\1{4,}/.test(text);
+
+            // Check 3: No vowels at all (except common acronyms like "CTO", "ROI")
+            const words = text.split(/\s+/);
+            const noVowelWords = words.filter(word =>
+                word.length > 3 && !/[aeiou]/i.test(word) && !/^(cto|roi|ceo|cfo|llc|inc|ltd)$/i.test(word)
+            );
+            const noVowels = noVowelWords.length > words.length * 0.5; // More than half words have no vowels
+
+            // Check 4: Too many consonants in a row (xvcxvzx, dfghj)
+            const consonantClusters = text.match(/[bcdfghjklmnpqrstvwxyz]{5,}/gi);
+            const tooManyConsonants = consonantClusters && consonantClusters.length > 2;
+
+            return keyboardMashing || repeatedChars || noVowels || tooManyConsonants;
+        };
+
+        // Check if responses as a whole look like gibberish
+        const checkAllResponsesForGibberish = (responses) => {
+            const allText = responses.filter(r => r && r.trim()).join(' ');
+
+            // If more than 30% of responses individually look like gibberish
+            const gibberishCount = responses.filter(r => quickGibberishCheck(r)).length;
+            const gibberishRatio = gibberishCount / Math.max(responses.length, 1);
+
+            return gibberishRatio > 0.3 || quickGibberishCheck(allText);
+        };
+
+        // DEBIASING QUESTION BANK - Pure Neutral Debiasing (Reveal, Don't Prescribe)
+        // question_type: 'insight' (reveal mental models), 'probing' (dig deeper neutrally), 'conversational' (softer tone)
+        const QUESTION_BANK = [
+            // CONFIRMATION BIAS - Insight (Reveal Mental Models)
+           // CONFIRMATION BIAS - Insight (Reveal Mental Models)
+        { id: "Q001", question: "What evidence would convince you this is wrong? Do you currently have access to that evidence?", biases_addressed: ["confirmation_bias"], question_type: "insight" },
+        { id: "Q002", question: "Who would most strongly disagree with this? What would their reasoning be?", biases_addressed: ["confirmation_bias"], question_type: "insight" },
+        { id: "Q003", question: "Are you looking for information to confirm this, or to challenge it?", biases_addressed: ["confirmation_bias"], question_type: "insight" },
+        { id: "Q004", question: "What percentage of your research has focused on risks versus benefits?", biases_addressed: ["confirmation_bias"], question_type: "insight" },
+
+        // CONFIRMATION BIAS - Probing (Dig Deeper)
+        { id: "Q005", question: "Which contradictory data points have you rationalized away? Why those specifically?", biases_addressed: ["confirmation_bias"], question_type: "probing" },
+        { id: "Q006", question: "If your biggest critic reviewed your analysis, what would they find missing?", biases_addressed: ["confirmation_bias"], question_type: "probing" },
+        { id: "Q007", question: "What uncomfortable questions are you avoiding asking about this?", biases_addressed: ["confirmation_bias"], question_type: "probing" },
+
+        // CONFIRMATION BIAS - Conversational (Softer Tone)
+        { id: "Q008", question: "Help me understand - what makes you so certain about this?", biases_addressed: ["confirmation_bias"], question_type: "conversational" },
+        { id: "Q009", question: "Have you talked to anyone who tried something similar and it didn't work out? What happened in those cases?", biases_addressed: ["confirmation_bias"], question_type: "conversational" },
+        { id: "Q010", question: "When you think about this decision, what makes you most uncomfortable?", biases_addressed: ["confirmation_bias"], question_type: "conversational" },
+
+        // AVAILABILITY BIAS - Insight (Reveal Mental Models)
+        { id: "Q011", question: "What's the most vivid example you're thinking of? How representative is that example of typical outcomes?", biases_addressed: ["availability_bias"], question_type: "insight" },
+        { id: "Q012", question: "How many similar situations have you actually analyzed versus just heard about?", biases_addressed: ["availability_bias"], question_type: "insight" },
+        { id: "Q013", question: "Are you basing this on personal experience, news stories, or systematic data?", biases_addressed: ["availability_bias"], question_type: "insight" },
+        { id: "Q014", question: "What boring but common outcomes are you overlooking in favor of dramatic ones?", biases_addressed: ["availability_bias"], question_type: "insight" },
+
+        // AVAILABILITY BIAS - Probing (Dig Deeper)
+        { id: "Q015", question: "If you surveyed 100 random cases instead of memorable ones, what pattern would emerge?", biases_addressed: ["availability_bias"], question_type: "probing" },
+        { id: "Q016", question: "How different is your current situation from the example that's influencing you most?", biases_addressed: ["availability_bias"], question_type: "probing" },
+        { id: "Q017", question: "What statistical base rate are you ignoring because of recent events?", biases_addressed: ["availability_bias"], question_type: "probing" },
+
+        // AVAILABILITY BIAS - Conversational (Softer Tone)
+        { id: "Q018", question: "That past success really stands out for you. What made it so memorable?", biases_addressed: ["availability_bias"], question_type: "conversational" },
+        { id: "Q019", question: "You keep mentioning that one case. Have you seen enough examples to know if it's typical?", biases_addressed: ["availability_bias"], question_type: "conversational" },
+        { id: "Q020", question: "Is this decision being driven more by what you've seen recently or by long-term patterns?", biases_addressed: ["availability_bias"], question_type: "conversational" },
+
+        // OVERCONFIDENCE BIAS - Insight (Reveal Mental Models)
+        { id: "Q021", question: "On a scale of 1-10, how confident are you? Now, how often are you right when you're that confident?", biases_addressed: ["overconfidence_bias"], question_type: "insight" },
+        { id: "Q022", question: "What specific expertise gives you an edge here that others don't have?", biases_addressed: ["overconfidence_bias"], question_type: "insight" },
+        { id: "Q023", question: "What don't you know about this decision? How important are those unknowns?", biases_addressed: ["overconfidence_bias"], question_type: "insight" },
+        { id: "Q024", question: "Would you bet meaningful personal money on this? Where would you hesitate?", biases_addressed: ["overconfidence_bias"], question_type: "insight" },
+
+        // OVERCONFIDENCE BIAS - Probing (Dig Deeper)
+        { id: "Q025", question: "If this fails spectacularly, what will the post-mortem reveal you missed?", biases_addressed: ["overconfidence_bias"], question_type: "probing" },
+        { id: "Q026", question: "How does your success rate compare to the industry average for similar decisions?", biases_addressed: ["overconfidence_bias"], question_type: "probing" },
+        { id: "Q027", question: "What complexities are you treating as simple? Why do you think they're simple?", biases_addressed: ["overconfidence_bias"], question_type: "probing" },
+
+        // OVERCONFIDENCE BIAS - Conversational (Softer Tone)
+        { id: "Q028", question: "You seem really confident. What's the chance you're wrong? 10%? 30%?", biases_addressed: ["overconfidence_bias"], question_type: "conversational" },
+        { id: "Q029", question: "I love your energy about this! What could go wrong that you haven't considered?", biases_addressed: ["overconfidence_bias"], question_type: "conversational" },
+        { id: "Q030", question: "Help me see what you're seeing. Why are you so confident when [specific challenge] exists?", biases_addressed: ["overconfidence_bias"], question_type: "conversational" },
+
+        // ANCHORING BIAS - Insight (Reveal Mental Models)
+        { id: "Q031", question: "Where did that initial number come from? How was it calculated?", biases_addressed: ["anchoring_bias"], question_type: "insight" },
+        { id: "Q032", question: "If you'd never heard any number, what would your independent estimate be?", biases_addressed: ["anchoring_bias"], question_type: "insight" },
+        { id: "Q033", question: "How much are you adjusting from the first figure you encountered? Is it enough?", biases_addressed: ["anchoring_bias"], question_type: "insight" },
+        { id: "Q034", question: "What happens to your decision if we double or halve that reference point?", biases_addressed: ["anchoring_bias"], question_type: "insight" },
+
+        // ANCHORING BIAS - Probing (Dig Deeper)
+        { id: "Q035", question: "Who benefits from you accepting that anchor point? What's their agenda?", biases_addressed: ["anchoring_bias"], question_type: "probing" },
+        { id: "Q036", question: "Have you built this estimate from first principles, or just tweaked someone else's?", biases_addressed: ["anchoring_bias"], question_type: "probing" },
+        { id: "Q037", question: "What comparable situations suggest a completely different range?", biases_addressed: ["anchoring_bias"], question_type: "probing" },
+
+        // ANCHORING BIAS - Conversational (Softer Tone)
+        { id: "Q038", question: "That number keeps coming up. What if we started fresh - what would make sense?", biases_addressed: ["anchoring_bias"], question_type: "conversational" },
+        { id: "Q039", question: "You seem attached to that figure. Is it because it's right, or because it came first?", biases_addressed: ["anchoring_bias"], question_type: "conversational" },
+        { id: "Q040", question: "Help me understand why that benchmark feels so reliable when the context has changed?", biases_addressed: ["anchoring_bias"], question_type: "conversational" },
+
+        // LOSS AVERSION - Insight (Reveal Mental Models)
+        { id: "Q041", question: "What worries you more: doing this and it failing, or not doing it and missing out?", biases_addressed: ["loss_aversion"], question_type: "insight" },
+        { id: "Q042", question: "Are you protecting what you have, or reaching for what you could gain?", biases_addressed: ["loss_aversion"], question_type: "insight" },
+        { id: "Q043", question: "If you had nothing invested yet, would you start now?", biases_addressed: ["loss_aversion"], question_type: "insight" },
+        { id: "Q044", question: "What's the real cost of inaction here? Not the fear, but the actual cost?", biases_addressed: ["loss_aversion"], question_type: "insight" },
+
+        // LOSS AVERSION - Probing (Dig Deeper)
+        { id: "Q045", question: "What sunk costs are making you feel trapped in this decision?", biases_addressed: ["loss_aversion"], question_type: "probing" },
+        { id: "Q046", question: "How much is fear of waste versus genuine opportunity assessment driving this?", biases_addressed: ["loss_aversion"], question_type: "probing" },
+        { id: "Q047", question: "If someone else inherited this situation with fresh eyes, what would they do?", biases_addressed: ["loss_aversion"], question_type: "probing" },
+
+        // LOSS AVERSION - Conversational (Softer Tone)
+        { id: "Q048", question: "You seem worried about walking away. What feels like it would be wasted?", biases_addressed: ["loss_aversion"], question_type: "conversational" },
+        { id: "Q049", question: "I'm sensing you're protecting something here. What are you afraid of losing?", biases_addressed: ["loss_aversion"], question_type: "conversational" },
+        { id: "Q050", question: "Help me understand - are you more excited about winning or worried about losing?", biases_addressed: ["loss_aversion"], question_type: "conversational" }
+        ];
+
+        // CONTEXT QUESTIONS (Phase 1) - Enhanced 15 questions that gather context AND detect biases naturally
+        const CONTEXT_QUESTIONS = [
+            // Questions 1-5: Decision Basics (Reveals Overconfidence + Anchoring)
+            { id: "decision_situation", question: "Tell me about the decision you're making. What's the situation?", type: "text" },
+            { id: "decision_type", question: "What type of decision is this - strategic, operational, investment, hiring, or something else?", type: "select", options: ["strategic", "operational", "investment", "hiring", "product", "other"] },
+            { id: "timeline", question: "Walk me through your timeline. When do you need to decide, and why that date?", type: "text" },
+            { id: "financial_commitment", question: "What's the financial commitment we're talking about?", type: "text" },
+            { id: "confidence_level", question: "On a scale of 0-10, how confident are you about this? What's making you feel that confident?", type: "text" },
+
+            // Questions 6-10: Experience & Stakeholders (Reveals Availability + Confirmation)
+            { id: "past_experience", question: "Have you made a decision like this before? Tell me about that experience.", type: "text" },
+            { id: "stakeholders", question: "Who else is involved in this decision? Who cares about the outcome?", type: "text" },
+            { id: "advocates", question: "Is there someone who's really pushing for this? What's driving their enthusiasm?", type: "text" },
+            { id: "alternatives", question: "What other options have you seriously considered? Walk me through them.", type: "text" },
+            { id: "success_criteria", question: "How will you know if this was the right call? What does success look like?", type: "text" },
+
+            // Questions 11-15: Risks & Constraints (Reveals Loss Aversion + Anchoring)
+            { id: "biggest_concern", question: "What's your biggest concern about this decision?", type: "text" },
+            { id: "worst_realistic", question: "If things go wrong, what's the worst realistic outcome? Not catastrophic - realistic.", type: "text" },
+            { id: "time_pressure", question: "Are you feeling rushed? What happens if you take more time?", type: "text" },
+            { id: "authority", question: "Who ultimately signs off on this? Can they override you?", type: "text" },
+            { id: "change_mind", question: "What would make you completely change your mind about this?", type: "text" }
+        ];
+
+        // Final Report Visualization Component
+        function FinalReportVisualization({ checkpoints }) {
+            const [expandedCheckpoint, setExpandedCheckpoint] = useState(null);
+            const [selectedCheckpoint, setSelectedCheckpoint] = useState(0);
+
+            // Prepare data for charts
+            const biasNames = ["overconfidence_bias", "confirmation_bias", "availability_bias", "anchoring_bias", "loss_aversion"];
+            const biasLabels = {
+                "overconfidence_bias": "Overconfidence",
+                "confirmation_bias": "Confirmation",
+                "availability_bias": "Availability",
+                "anchoring_bias": "Anchoring",
+                "loss_aversion": "Loss Aversion"
+            };
+            const biasColors = {
+                "overconfidence_bias": "#ef4444",
+                "confirmation_bias": "#f59e0b",
+                "availability_bias": "#10b981",
+                "anchoring_bias": "#3b82f6",
+                "loss_aversion": "#8b5cf6"
+            };
+
+            // Timeline data
+            const timelineData = checkpoints.map((cp, idx) => {
+                const dataPoint = { name: `CP${idx + 1}` };
+                biasNames.forEach(bias => {
+                    const biasData = cp.biases.find(b => b.name === bias);
+                    dataPoint[bias] = biasData ? biasData.score : 0;
+                });
+                return dataPoint;
+            });
+
+            // Before/After data
+            const initial = checkpoints[0];
+            const final = checkpoints[checkpoints.length - 1];
+            const beforeAfterData = biasNames.map(bias => {
+                const initialBias = initial.biases.find(b => b.name === bias);
+                const finalBias = final.biases.find(b => b.name === bias);
+                return {
+                    name: biasLabels[bias],
+                    Initial: initialBias ? initialBias.score : 0,
+                    Final: finalBias ? finalBias.score : 0
+                };
+            });
+
+            // Calculate summary metrics
+            const calculateMetrics = () => {
+                const initialScores = initial.biases.map(b => b.score);
+                const finalScores = final.biases.map(b => b.score);
+                const avgInitial = initialScores.length > 0 ? initialScores.reduce((a, b) => a + b, 0) / initialScores.length : 0;
+                const avgFinal = finalScores.length > 0 ? finalScores.reduce((a, b) => a + b, 0) / finalScores.length : 0;
+                const reduction = avgInitial > 0 ? ((avgInitial - avgFinal) / avgInitial * 100).toFixed(1) : '0.0';
+
+                const improved = [];
+                const worsened = [];
+                const persistent = [];
+
+                biasNames.forEach(bias => {
+                    const initialScore = initial.biases.find(b => b.name === bias)?.score || 0;
+                    const finalScore = final.biases.find(b => b.name === bias)?.score || 0;
+                    const change = initialScore - finalScore;
+
+                    if (change > 0.1) improved.push({ name: bias, change });
+                    else if (change < -0.1) worsened.push({ name: bias, change: Math.abs(change) });
+                    else if (finalScore > 0.5) persistent.push({ name: bias, score: finalScore });
+                });
+
+                const riskLevel = avgFinal > 0.6 ? 'High' : avgFinal > 0.4 ? 'Medium' : 'Low';
+
+                return { reduction, improved, worsened, persistent, riskLevel, avgFinal };
+            };
+
+            const metrics = calculateMetrics();
+
+            return (
+                <div className="space-y-6 p-6">
+                    {/* Summary Dashboard */}
+                    <div className="bg-white rounded-lg shadow-lg p-6">
+                        <h2 className="text-2xl font-bold mb-6 text-gray-800">📊 Executive Summary</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg">
+                                <div className="text-sm text-blue-600 font-semibold mb-1">Overall Risk Level</div>
+                                <div className={`text-3xl font-bold ${metrics.riskLevel === 'High' ? 'text-red-600' : metrics.riskLevel === 'Medium' ? 'text-yellow-600' : 'text-green-600'}`}>
+                                    {metrics.riskLevel}
+                                </div>
+                                <div className="text-sm text-gray-600 mt-1">Avg Score: {(metrics.avgFinal || 0).toFixed(2)}</div>
+                            </div>
+
+                            <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg">
+                                <div className="text-sm text-green-600 font-semibold mb-1">Exploration Depth</div>
+                                <div className="text-3xl font-bold text-green-700">{metrics.reduction}%</div>
+                                <div className="text-sm text-gray-600 mt-1">{checkpoints.length} Reflections</div>
+                            </div>
+
+                            <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg">
+                                <div className="text-sm text-purple-600 font-semibold mb-1">Questions Explored</div>
+                                <div className="text-3xl font-bold text-purple-700">{(checkpoints.length - 1) * 2}</div>
+                                <div className="text-sm text-gray-600 mt-1">Thinking Patterns</div>
+                            </div>
+                        </div>
+
+                        {/* Badges */}
+                        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <div className="text-sm font-semibold text-green-700 mb-2">🌟 Top 3 Explored Patterns:</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {metrics.improved.slice(0, 3).map(b => (
+                                        <span key={b.name} className="badge badge-green">
+                                            {biasLabels[b.name]} (Awareness Gained)
+                                        </span>
+                                    ))}
+                                    {metrics.improved.length === 0 && <span className="text-gray-500 text-sm">Consistent thinking patterns</span>}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="text-sm font-semibold text-blue-700 mb-2">💎 Top 3 Consistent Patterns:</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {metrics.persistent.slice(0, 3).map(b => (
+                                        <span key={b.name} className="badge badge-blue">
+                                            {biasLabels[b.name]} (Maintained with Awareness)
+                                        </span>
+                                    ))}
+                                    {metrics.persistent.length === 0 && <span className="text-gray-500 text-sm">Highly varied thinking patterns</span>}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Bias Timeline Table */}
+                    <div className="bg-white rounded-lg shadow-lg p-6">
+                        <h3 className="text-xl font-bold mb-4 text-gray-800">📈 Bias Evolution Timeline</h3>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Checkpoint</th>
+                                        {biasNames.map(bias => (
+                                            <th key={bias} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{biasLabels[bias]}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {checkpoints.map((cp, idx) => (
+                                        <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{cp.stage.split(' ').slice(0, 3).join(' ')}</td>
+                                            {biasNames.map(bias => {
+                                                const biasData = cp.biases.find(b => b.name === bias);
+                                                const score = biasData ? biasData.score : 0;
+                                                const colorClass = score > 0.6 ? 'text-red-600 font-semibold' : score > 0.4 ? 'text-yellow-600 font-semibold' : 'text-green-600 font-semibold';
+                                                return (
+                                                    <td key={bias} className={`px-4 py-3 whitespace-nowrap text-sm ${colorClass}`}>
+                                                        {((score || 0) * 100).toFixed(0)}%
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            <div className="mt-2 text-xs text-gray-500">
+                                <span className="text-green-600 font-semibold">● Green (&lt;40%)</span> = Low Risk |
+                                <span className="text-yellow-600 font-semibold"> ● Yellow (40-60%)</span> = Medium Risk |
+                                <span className="text-red-600 font-semibold"> ● Red (&gt;60%)</span> = High Risk
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Before/After Comparison */}
+                    <div className="bg-white rounded-lg shadow-lg p-6">
+                        <h3 className="text-xl font-bold mb-4 text-gray-800">📊 Before/After Comparison</h3>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bias Type</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Initial</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Final</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Change</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {beforeAfterData.map((bias, idx) => {
+                                        const change = (bias.Initial || 0) - (bias.Final || 0);
+                                        const changePercent = (bias.Initial && bias.Initial > 0) ? ((change / bias.Initial) * 100).toFixed(0) : '0';
+                                        const isImprovement = change > 0;
+                                        return (
+                                            <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{bias.name}</td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-sm text-red-600 font-semibold">{((bias.Initial || 0) * 100).toFixed(0)}%</td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-sm text-green-600 font-semibold">{((bias.Final || 0) * 100).toFixed(0)}%</td>
+                                                <td className={`px-4 py-3 whitespace-nowrap text-sm font-semibold ${isImprovement ? 'text-green-600' : 'text-red-600'}`}>
+                                                    {isImprovement ? '↓' : '↑'} {Math.abs(changePercent)}%
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Collapsible Checkpoint Cards */}
+                    <div className="space-y-3">
+                        <h3 className="text-xl font-bold text-gray-800">📋 Detailed Checkpoints</h3>
+                        {checkpoints.map((cp, idx) => {
+                            const isExpanded = expandedCheckpoint === idx;
+                            const prevCheckpoint = idx > 0 ? checkpoints[idx - 1] : null;
+
+                            let improved = 0, worsened = 0;
+                            if (prevCheckpoint) {
+                                cp.biases.forEach(bias => {
+                                    const prevBias = prevCheckpoint.biases.find(b => b.name === bias.name);
+                                    if (prevBias) {
+                                        const change = prevBias.score - bias.score;
+                                        if (change > 0.05) improved++;
+                                        else if (change < -0.05) worsened++;
+                                    }
+                                });
+                            }
+
+                            return (
+                                <div key={idx} className="bg-white rounded-lg shadow checkpoint-card">
+                                    <div
+                                        className="p-4 flex items-center justify-between"
+                                        onClick={() => setExpandedCheckpoint(isExpanded ? null : idx)}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="text-2xl">📊</div>
+                                            <div>
+                                                <div className="font-bold text-gray-800">{cp.stage}</div>
+                                                {idx > 0 && (
+                                                    <div className="flex gap-2 mt-1">
+                                                        {improved > 0 && <span className="badge badge-green">{improved} Improved ↓</span>}
+                                                        {worsened > 0 && <span className="badge badge-red">{worsened} Worsened ↑</span>}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="text-gray-400 text-2xl">{isExpanded ? '▲' : '▼'}</div>
+                                    </div>
+
+                                    {isExpanded && (
+                                        <div className="p-4 border-t border-gray-200 space-y-4">
+                                            {/* Summary */}
+                                            {(cp.top_3_summary || cp.summary) && (
+                                                <div className="bg-blue-50 p-3 rounded">
+                                                    <div className="font-semibold text-blue-900 mb-2">Summary:</div>
+                                                    <div className="text-sm text-gray-700">{cp.top_3_summary || cp.summary}</div>
+                                                </div>
+                                            )}
+
+                                            {/* Bias Scores */}
+                                            <div>
+                                                <div className="font-semibold text-gray-900 mb-2">Bias Scores:</div>
+                                                <div className="space-y-2">
+                                                    {cp.biases.map(bias => (
+                                                        <div key={bias.name} className="flex items-center gap-3">
+                                                            <div className="w-32 text-sm font-medium">{biasLabels[bias.name]}</div>
+                                                            <div className="flex-1 bg-gray-200 rounded-full h-6 relative">
+                                                                <div
+                                                                    className="h-6 rounded-full flex items-center justify-end pr-2 text-xs text-white font-bold"
+                                                                    style={{
+                                                                        width: `${bias.score * 100}%`,
+                                                                        backgroundColor: biasColors[bias.name]
+                                                                    }}
+                                                                >
+                                                                    {((bias.score || 0) * 100).toFixed(0)}%
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Manifestations */}
+                                            <div>
+                                                <div className="font-semibold text-gray-900 mb-2">Bias Manifestations:</div>
+                                                <div className="space-y-2">
+                                                    {cp.biases.map(bias => (
+                                                        <div key={bias.name} className="text-sm">
+                                                            <span className="font-medium text-gray-700">{biasLabels[bias.name]}:</span>
+                                                            <span className="text-gray-600 ml-2">{bias.manifestation}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        }
+
+        // Main Chatbot Component
+        function CognitiveDebiasingChatbot() {
+            const [phase, setPhase] = useState('context'); // context, analysis, debiasing, report
+            const [messages, setMessages] = useState([
+                { type: 'bot', text: "Hello! I'm your Thinking Partner. I'm here to help you explore patterns in your decision-making - not to judge or change your mind, but to help you gain awareness of how you think. Let's start by understanding your decision." }
+            ]);
+            const [currentInput, setCurrentInput] = useState('');
+            const [contextAnswers, setContextAnswers] = useState({});
+            const [currentContextIndex, setCurrentContextIndex] = useState(0);
+            const [debiasingAnswers, setDebiasingAnswers] = useState({}); // Enhanced structure
+            const [checkpoints, setCheckpoints] = useState([]);
+            const [askedQuestions, setAskedQuestions] = useState([]);
+            const [debiasingCount, setDebiasingCount] = useState(0);
+            const [currentDebiasingQuestions, setCurrentDebiasingQuestions] = useState([]);
+            const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+            const [currentQuestionDepth, setCurrentQuestionDepth] = useState(0); // Track follow-up depth
+            const [pendingFollowUp, setPendingFollowUp] = useState(null); // Store generated follow-up
+            const [synthesisCount, setSynthesisCount] = useState(0); // Track for synthesis questions
+            const [questionStats, setQuestionStats] = useState({});
+            const [sessions, setSessions] = useState([]);
+            const [analytics, setAnalytics] = useState({
+                total_sessions: 0,
+                avg_questions_to_threshold: 0,
+                success_rate: 0,
+                top_questions: [],
+                effectiveness_over_time: []
+            });
+            const [dataLoaded, setDataLoaded] = useState(false);
+
+            // Load data from IndexedDB on mount
+            useEffect(() => {
+                const loadData = async () => {
+                    const stats = await dbHelpers.getQuestionStats();
+                    const sessionsData = await dbHelpers.getSessions();
+                    const analyticsData = await dbHelpers.getAnalytics();
+
+                    setQuestionStats(stats);
+                    setSessions(sessionsData);
+                    setAnalytics(analyticsData);
+                    setDataLoaded(true);
+                };
+                loadData();
+            }, []); // Run once on mount
+
+            const [sessionStartTime, setSessionStartTime] = useState(null);
+            const [showAdminPanel, setShowAdminPanel] = useState(false);
+            const [activeSynthesisQuestion, setActiveSynthesisQuestion] = useState(null); // Track active synthesis question
+
+            // Combined bias tracking state (atomic updates to prevent desynchronization)
+            const [biasTracking, setBiasTracking] = useState({
+                currentBias: null,
+                countsPerBias: {}
+            });
+
+            const [isLoading, setIsLoading] = useState(false);
+            const [loadingMessage, setLoadingMessage] = useState('');
+            const [error, setError] = useState(null);
+            const [retryAction, setRetryAction] = useState(null);
+            const chatEndRef = useRef(null);
+
+            // Session persistence state
+            const [showResumePrompt, setShowResumePrompt] = useState(false);
+            const [savedSessionData, setSavedSessionData] = useState(null);
+
+            // Cost monitoring state
+            const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0 });
+
+            // Auto-scroll to bottom
+            useEffect(() => {
+                chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages]);
+
+            // Load saved session on mount
+            useEffect(() => {
+                const stored = localStorage.getItem('activeSession');
+                if (stored) {
+                    try {
+                        const session = JSON.parse(stored);
+                        const age = Date.now() - session.timestamp;
+                        const ONE_HOUR = 60 * 60 * 1000;
+
+                        // Only offer resume if less than 1 hour old and not completed
+                        if (age < ONE_HOUR && session.phase !== 'report' && session.phase !== 'ended') {
+                            setSavedSessionData(session);
+                            setShowResumePrompt(true);
+                        } else {
+                            // Clear old session
+                            localStorage.removeItem('activeSession');
+                        }
+                    } catch (error) {
+                        console.error('Failed to load saved session:', error);
+                        localStorage.removeItem('activeSession');
+                    }
+                }
+            }, []);
+
+            // Auto-save active session (debounced)
+            useEffect(() => {
+                // Don't save if completed or not started
+                if (phase === 'report' || phase === 'ended' || phase === 'welcome') return;
+                if (messages.length === 0) return; // No conversation yet
+
+                const sessionData = {
+                    phase,
+                    messages,
+                    contextAnswers,
+                    currentContextIndex,
+                    checkpoints,
+                    debiasingAnswers,
+                    debiasingCount,
+                    askedQuestions,
+                    currentDebiasingQuestions,
+                    currentQuestionIndex,
+                    currentQuestionDepth,
+                    biasTracking, // Combined state
+                    activeSynthesisQuestion,
+                    synthesisCount,
+                    timestamp: Date.now()
+                };
+
+                // Debounce saving to avoid too frequent writes
+                const timeoutId = setTimeout(() => {
+                    localStorage.setItem('activeSession', JSON.stringify(sessionData));
+                }, 500);
+
+                return () => clearTimeout(timeoutId);
+            }, [phase, messages, contextAnswers, checkpoints, debiasingAnswers, biasTracking]);
+
+            // Ask next context question - define performInitialAnalysis first to avoid dependency issues
+            const performInitialAnalysis = async () => {
+                // Start tracking session time
+                setSessionStartTime(Date.now());
+
+                setIsLoading(true);
+                setLoadingMessage('🧠 Exploring interesting patterns in your thinking...');
+                setError(null);
+
+                try {
+                    const contextSummary = Object.entries(contextAnswers).map(([key, value]) => {
+                        const q = CONTEXT_QUESTIONS.find(q => q.id === key);
+                        return `${q.question}: ${value}`;
+                    }).join('\n');
+
+                    // Define tool schema for pattern exploration
+                    const biasAnalysisTool = {
+                        name: "explore_thinking_patterns",
+                        description: "Identify interesting cognitive patterns in decision-making with neutral, curiosity-driven assessment",
+                        input_schema: {
+                            type: "object",
+                            properties: {
+                                biases: {
+                                    type: "array",
+                                    description: "Array of 5 cognitive pattern observations",
+                                    items: {
+                                        type: "object",
+                                        properties: {
+                                            name: {
+                                                type: "string",
+                                                enum: ["overconfidence_bias", "confirmation_bias", "availability_bias", "anchoring_bias", "loss_aversion"],
+                                                description: "Name of the cognitive pattern"
+                                            },
+                                            score: {
+                                                type: "number",
+                                                minimum: 0,
+                                                maximum: 1,
+                                                description: "Pattern strength from 0 (not evident) to 1 (strongly evident) - NOT a judgment of quality"
+                                            },
+                                            manifestation: {
+                                                type: "string",
+                                                description: "Neutral observation of how this pattern appears in their thinking (non-judgmental language)"
+                                            },
+                                            exploration_opportunity: {
+                                                type: "string",
+                                                description: "What could be interesting to explore about this pattern (curious, not corrective)"
+                                            }
+                                        },
+                                        required: ["name", "score", "manifestation", "exploration_opportunity"]
+                                    },
+                                    minItems: 5,
+                                    maxItems: 5
+                                },
+                                top_3_summary: {
+                                    type: "string",
+                                    description: "Neutral summary of the 3 most interesting patterns to explore (use appreciative, curious language)"
+                                }
+                            },
+                            required: ["biases", "top_3_summary"]
+                        }
+                    };
+
+                    const prompt = `As a neutral thinking partner, explore the cognitive patterns in this person's decision-making process. Your role is to observe interesting patterns, NOT to judge or correct their thinking.
+
+CRITICAL GUIDELINES:
+- Use NEUTRAL, APPRECIATIVE language (never "dangerous", "concerning", "troubling", "risky")
+- Frame patterns as "interesting" or "notable" rather than "problematic"
+- Scores measure pattern STRENGTH (0-1), NOT quality or correctness
+- Someone with high pattern scores who maintains their position after awareness shows SOPHISTICATED thinking
+- Focus on EXPLORATION OPPORTUNITIES, not warnings or corrections
+- Respect their expertise - they may have valid reasons for their approach
+
+Decision Context:
+${contextSummary}
+
+For each of the 5 patterns (overconfidence, confirmation, availability, anchoring, loss aversion):
+1. Observe the pattern neutrally (score 0-1 for strength)
+2. Note how it manifests (non-judgmental observation)
+3. Identify what would be interesting to explore about it
+
+Provide a summary highlighting the 3 most interesting patterns to explore together, using curious and appreciative language.`;
+
+                    const analysis = await callAnthropicAPIWithTools(prompt, biasAnalysisTool);
+
+                    const checkpoint = {
+                        stage: "Initial Pattern Exploration (After Context Questions)",
+                        biases: analysis.biases,
+                        top_3_summary: analysis.top_3_summary
+                    };
+
+                    setCheckpoints([checkpoint]);
+                    setPhase('debiasing');
+                    setIsLoading(false);
+                    setLoadingMessage('');
+
+                    addBotMessage("✨ **Pattern Exploration Complete!**\n\nI've noticed some interesting patterns in your thinking. I'd love to explore these with you through a few questions - not to change your mind, but to help you gain awareness of your thought process.");
+
+                    // Start debiasing (ask 1 question at a time, start with insight questions)
+                    setTimeout(() => askDebiasingQuestions(analysis.biases, 'insight', null), 1000);
+
+                } catch (error) {
+                    setIsLoading(false);
+                    setLoadingMessage('');
+                    setError(`❌ **Analysis Failed**\n\n${error.message}\n\nPlease check your API key and internet connection, then try again.`);
+                    setRetryAction(() => () => performInitialAnalysis());
+                }
+            };
+
+            useEffect(() => {
+                if (phase === 'context' && currentContextIndex < CONTEXT_QUESTIONS.length && Object.keys(contextAnswers).length === currentContextIndex) {
+                    const nextQ = CONTEXT_QUESTIONS[currentContextIndex];
+                    setTimeout(() => {
+                        addBotMessage(`**Question ${currentContextIndex + 1}/${CONTEXT_QUESTIONS.length}:** ${nextQ.question}`);
+                    }, 500);
+                } else if (phase === 'context' && currentContextIndex === CONTEXT_QUESTIONS.length && Object.keys(contextAnswers).length === CONTEXT_QUESTIONS.length) {
+                    // All context questions answered, move to analysis
+                    performInitialAnalysis();
+                }
+            }, [currentContextIndex, contextAnswers, phase]);
+
+            const addBotMessage = (text) => {
+                setMessages(prev => [...prev, { type: 'bot', text }]);
+            };
+
+            const addUserMessage = (text) => {
+                setMessages(prev => [...prev, { type: 'user', text }]);
+            };
+
+            // Call Anthropic API with tool/function calling for structured data
+            const callAnthropicAPIWithTools = async (prompt, toolSchema) => {
+                try {
+                    const response = await fetch('http://localhost:3000/api/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            model: 'claude-sonnet-4-5-20250929',
+                            max_tokens: 2048,
+                            tools: [toolSchema],
+                            tool_choice: { type: "tool", name: toolSchema.name },
+                            messages: [{ role: 'user', content: prompt }]
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        console.error('API Error:', response.status, response.statusText, errorData);
+                        throw new Error(`API call failed (${response.status}): ${errorData.error?.message || response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    console.log('Tool Call Response:', data);
+
+                    // Track token usage for cost monitoring
+                    if (data.usage) {
+                        setTokenUsage(prev => ({
+                            input: prev.input + (data.usage.input_tokens || 0),
+                            output: prev.output + (data.usage.output_tokens || 0)
+                        }));
+                    }
+
+                    // Extract tool use from response
+                    if (!data || !Array.isArray(data.content)) {
+                        throw new Error('Invalid API response format');
+                    }
+
+                    const toolUse = data.content.find(block => block.type === 'tool_use');
+                    if (!toolUse) {
+                        throw new Error('No tool use found in response');
+                    }
+
+                    return toolUse.input; // Guaranteed valid by Anthropic!
+                } catch (error) {
+                    console.error('Anthropic API Error:', error);
+                    throw error;
+                }
+            };
+
+            // Original API call for non-structured responses (like final report)
+            const callAnthropicAPI = async (prompt, systemPrompt = '') => {
+                try {
+                    // Use local proxy server instead of direct API call
+                    const response = await fetch('http://localhost:3000/api/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            model: 'claude-sonnet-4-5-20250929',
+                            max_tokens: 2048,
+                            system: systemPrompt || 'You are a cognitive bias analysis expert.',
+                            messages: [{ role: 'user', content: prompt }]
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        console.error('API Error:', response.status, response.statusText, errorData);
+                        throw new Error(`API call failed (${response.status}): ${errorData.error?.message || response.statusText}`);
+                    }
+
+                    const data = await response.json();
+
+                    // Track token usage for cost monitoring
+                    if (data.usage) {
+                        setTokenUsage(prev => ({
+                            input: prev.input + (data.usage.input_tokens || 0),
+                            output: prev.output + (data.usage.output_tokens || 0)
+                        }));
+                    }
+
+                    if (!data || !Array.isArray(data.content) || data.content.length === 0) {
+                        throw new Error('Invalid API response format');
+                    }
+
+                    const textContent = data.content[0]?.text;
+                    if (!textContent) {
+                        throw new Error('No text content in API response');
+                    }
+
+                    return textContent;
+                } catch (error) {
+                    console.error('Anthropic API Error:', error);
+                    throw error;
+                }
+            };
+
+            // Personalize questions with user context
+            const personalizeQuestions = async (questions) => {
+                try {
+                    if (!questions || questions.length === 0) {
+                        return questions;
+                    }
+
+                    const contextSummary = Object.entries(contextAnswers).map(([key, value]) => {
+                        const q = CONTEXT_QUESTIONS.find(q => q.id === key);
+                        return `${q.question}: ${value}`;
+                    }).join('\n');
+
+                    // Pre-process questions to replace placeholders like [X] with actual values
+                    const processedQuestions = questions.map(q => {
+                        let processedQuestion = q.question;
+
+                        // Replace [X/10] with actual confidence level
+                        if (processedQuestion.includes('[X/10]') && contextAnswers.confidence_level) {
+                            // Extract just the number from the confidence answer
+                            const confidenceMatch = contextAnswers.confidence_level.match(/\d+/);
+                            if (confidenceMatch) {
+                                processedQuestion = processedQuestion.replace('[X/10]', `${confidenceMatch[0]}/10`);
+                            }
+                        }
+
+                        return { ...q, question: processedQuestion };
+                    });
+
+                    const questionsList = processedQuestions.map((q, idx) => `${idx + 1}. ${q.question}`).join('\n');
+                    const returnFormat = processedQuestions.map((_, idx) => `QUESTION ${idx + 1}: [personalized question]`).join('\\n');
+
+                    const prompt = `You are a neutral mirror reflecting someone's thinking patterns. Personalize these questions to be conversational and genuinely curious - like holding up a mirror to their thought process.
+
+User's Decision Context:
+${contextSummary}
+
+Generic Questions to Personalize:
+${questionsList}
+
+Instructions:
+- Use a neutral, exploratory tone - not formal or interrogative
+- Reference their specific decision naturally in conversation
+- Make it feel like you're genuinely curious about their thinking patterns
+- Use phrases like "I'm curious...", "Walk me through...", "What's your thinking on..."
+- Avoid sounding like a test or interrogation
+- Keep it conversational and neutral - no implied "right" answers
+- Return as: ${returnFormat}`;
+
+                    const response = await callAnthropicAPI(prompt);
+                    const parts = response.split(/QUESTION \d+:/);
+
+                    return processedQuestions.map((q, idx) => ({
+                        ...q,
+                        personalizedQuestion: parts[idx + 1]?.trim() || q.question
+                    }));
+                } catch (error) {
+                    console.error('Personalization error:', error);
+
+                    // Even on error, return questions with placeholders replaced
+                    return questions.map(q => {
+                        let processedQuestion = q.question;
+                        if (processedQuestion.includes('[X/10]') && contextAnswers.confidence_level) {
+                            const confidenceMatch = contextAnswers.confidence_level.match(/\d+/);
+                            if (confidenceMatch) {
+                                processedQuestion = processedQuestion.replace('[X/10]', `${confidenceMatch[0]}/10`);
+                            }
+                        }
+                        return { ...q, question: processedQuestion };
+                    });
+                }
+            };
+
+            // Detect if follow-up question is needed
+            const detectFollowUpNeed = async (question, answer, depth) => {
+                if (depth >= 2) return null; // Max 2 follow-ups
+
+                try {
+                    const contextSummary = Object.entries(contextAnswers).map(([key, value]) => {
+                        const q = CONTEXT_QUESTIONS.find(q => q.id === key);
+                        return `${q.question}: ${value}`;
+                    }).join('\n');
+
+                    const prompt = `You are a neutral thinking mirror. The user just answered a question, and you're checking if a clarifying follow-up would help reveal more of their thinking.
+
+User Context: ${contextSummary}
+
+Question Asked: ${question}
+User's Answer: ${answer}
+Current Depth: ${depth} (0 = main answer, 1 = first follow-up)
+
+Task: Determine if a neutral follow-up question would reveal more about their thinking patterns.
+
+RETURN FORMAT:
+NEEDS_FOLLOWUP: [YES or NO]
+REASON: [if yes, what pattern/assumption could be explored]
+QUESTION: [if yes, a neutral, curious follow-up question]
+
+Use neutral, exploratory patterns:
+- "How did you arrive at that?"
+- "You mentioned X and also Y. How do those connect in your thinking?"
+- "Can you walk me through what led you there?"
+- "What does [term] mean to you specifically?"
+- "What else is part of that picture?"
+
+CRITICAL:
+- NO implied "correct" answers
+- NO leading questions (avoid "Have you considered..." or "Shouldn't you...")
+- NO prescriptive suggestions
+- Keep it purely exploratory - reveal their thinking without steering it`;
+
+                    const response = await callAnthropicAPI(prompt);
+
+                    const needsMatch = response.match(/NEEDS_FOLLOWUP:\s*(YES|NO)/i);
+                    const questionMatch = response.match(/QUESTION:\s*(.+?)(?:\n|$)/);
+                    const reasonMatch = response.match(/REASON:\s*(.+?)(?:\n|$)/);
+
+                    if (needsMatch && needsMatch[1].toUpperCase() === 'YES' && questionMatch) {
+                        return {
+                            question: questionMatch[1].trim(),
+                            reason: reasonMatch ? reasonMatch[1].trim() : 'Potential blind spot detected',
+                            depth: depth + 1
+                        };
+                    }
+
+                    return null;
+                } catch (error) {
+                    console.error('Follow-up detection error:', error);
+                    return null;
+                }
+            };
+
+            // Generate synthesis question connecting multiple answers
+            const generateSynthesisQuestion = async () => {
+                try {
+                    // Get last 4 answers
+                    const recentAnswers = Object.entries(debiasingAnswers).slice(-4);
+                    if (recentAnswers.length < 4) return null;
+
+                    const answerSummary = recentAnswers.map(([qId, data]) => {
+                        const q = QUESTION_BANK.find(q => q.id === qId);
+                        return `Q: ${q?.question || qId}\nA: ${data.mainAnswer || data}`;
+                    }).join('\n\n');
+
+                    const prompt = `You are a neutral mirror reflecting someone's thinking patterns. You've noticed something interesting across their recent answers - a pattern, a tension, or a contradiction.
+
+Recent Answers:
+${answerSummary}
+
+User Context:
+${Object.entries(contextAnswers).map(([k, v]) => `${k}: ${v}`).join('\n')}
+
+Task: Generate ONE neutral, exploratory synthesis question that:
+- Connects dots between their answers in a curious, observational way
+- Points out a pattern or tension you noticed
+- Reveals how different pieces fit together (or don't)
+- Uses phrases like "I'm noticing...", "I'm curious how...", "You mentioned both X and Y..."
+- Purely observational - no implied "correct" answer
+
+Example tone:
+- "I'm noticing you mentioned [X] earlier, but also [Y]. How do those two pieces fit together in your thinking?"
+- "You've talked about [concern A] and [concern B]. Which one weighs more heavily in your thinking?"
+
+Return ONLY the synthesis question, no explanation.`;
+
+                    const response = await callAnthropicAPI(prompt);
+                    return response.trim();
+                } catch (error) {
+                    console.error('Synthesis generation error:', error);
+                    return null;
+                }
+            };
+
+            // Derive user context from context answers
+            const getUserContext = () => {
+                // Use correct keys from CONTEXT_QUESTIONS (updated for 15-question format)
+                const decisionSituation = contextAnswers['decision_situation']?.toLowerCase() || '';
+                const decisionTypeField = contextAnswers['decision_type']?.toLowerCase() || '';
+                const confidenceAnswer = contextAnswers['confidence_level']?.toLowerCase() || '';
+                const timeline = contextAnswers['timeline']?.toLowerCase() || '';
+
+                // Extract numeric confidence from text answer (e.g., "7/10" or "7" or "seven")
+                let confidence = 5; // default
+                const confMatch = confidenceAnswer.match(/(\d+)/);
+                if (confMatch) {
+                    confidence = parseInt(confMatch[1]);
+                } else if (confidenceAnswer.includes('very confident') || confidenceAnswer.includes('extremely')) {
+                    confidence = 9;
+                } else if (confidenceAnswer.includes('confident')) {
+                    confidence = 7;
+                } else if (confidenceAnswer.includes('not') || confidenceAnswer.includes('low')) {
+                    confidence = 3;
+                }
+
+                // Categorize decision type from both situation description and type field
+                let decisionCategory = 'general';
+                const combinedText = `${decisionSituation} ${decisionTypeField}`;
+
+                if (combinedText.includes('invest') || combinedText.includes('acquisition') || combinedText.includes('strategic')) {
+                    decisionCategory = 'strategic';
+                } else if (combinedText.includes('hire') || combinedText.includes('operati') || combinedText.includes('process')) {
+                    decisionCategory = 'operational';
+                } else if (combinedText.includes('product') || combinedText.includes('feature')) {
+                    decisionCategory = 'product';
+                }
+
+                // Categorize confidence level
+                const confidenceLevel = confidence >= 7 ? 'high' : confidence >= 4 ? 'medium' : 'low';
+
+                // Categorize timeline pressure
+                const timelinePressure = timeline.includes('day') || timeline.includes('week') ? 'high' :
+                                         timeline.includes('month') ? 'medium' : 'low';
+
+                return {
+                    decision_type: decisionCategory,
+                    confidence_level: confidenceLevel,
+                    timeline_pressure: timelinePressure,
+                    initial_confidence: confidence
+                };
+            };
+
+            // Enhanced question effectiveness tracking with context and trends
+            const updateQuestionStats = (questionId, biasReduction, userContext) => {
+                setQuestionStats(prev => {
+                    const stats = prev[questionId] || {
+                        times_asked: 0,
+                        total_bias_reduction: 0,
+                        avg_effectiveness: 0,
+                        effectiveness_by_context: {},
+                        effectiveness_trend: [],
+                        last_updated: null
+                    };
+
+                    // Update basic stats
+                    const newTimesAsked = stats.times_asked + 1;
+                    const newTotalReduction = stats.total_bias_reduction + biasReduction;
+                    const newAvgEffectiveness = newTotalReduction / newTimesAsked;
+
+                    // Update contextual stats (for future ML)
+                    const contextKey = `${userContext.decision_type}_${userContext.confidence_level}`;
+                    const contextStats = stats.effectiveness_by_context[contextKey] || { count: 0, avg: 0, total: 0 };
+                    const newContextTotal = contextStats.total + biasReduction;
+                    const newContextCount = contextStats.count + 1;
+                    const newContextAvg = newContextTotal / newContextCount;
+
+                    // Update trend (rolling window of last 10)
+                    const newTrend = [...stats.effectiveness_trend, biasReduction];
+                    if (newTrend.length > 10) {
+                        newTrend.shift();
+                    }
+
+                    const newStats = {
+                        times_asked: newTimesAsked,
+                        total_bias_reduction: newTotalReduction,
+                        avg_effectiveness: newAvgEffectiveness,
+                        effectiveness_by_context: {
+                            ...stats.effectiveness_by_context,
+                            [contextKey]: {
+                                count: newContextCount,
+                                avg: newContextAvg,
+                                total: newContextTotal
+                            }
+                        },
+                        effectiveness_trend: newTrend,
+                        last_updated: new Date().toISOString()
+                    };
+
+                    const updated = { ...prev, [questionId]: newStats };
+                    dbHelpers.setQuestionStats(updated);
+                    return updated;
+                });
+            };
+
+            // Update aggregate analytics from all sessions
+            const updateAnalytics = (allSessions) => {
+                if (allSessions.length === 0) return;
+
+                const totalSessions = allSessions.length;
+                const successfulSessions = allSessions.filter(s => s.reached_threshold);
+                const successRate = successfulSessions.length / totalSessions;
+
+                const avgQuestions = allSessions.reduce((sum, s) => sum + s.total_questions, 0) / totalSessions;
+
+                // Question rankings
+                const questionPerformance = {};
+                allSessions.forEach(session => {
+                    session.questions_asked.forEach(q => {
+                        if (!questionPerformance[q.question_id]) {
+                            questionPerformance[q.question_id] = {
+                                id: q.question_id,
+                                total_reduction: 0,
+                                count: 0
+                            };
+                        }
+                        const totalBiasChange = Object.values(q.immediate_bias_change || {}).reduce((a, b) => a + b, 0);
+                        questionPerformance[q.question_id].total_reduction += totalBiasChange;
+                        questionPerformance[q.question_id].count++;
+                    });
+                });
+
+                const topQuestions = Object.values(questionPerformance)
+                    .map(q => ({
+                        id: q.id,
+                        avg_effectiveness: q.total_reduction / q.count,
+                        times_used: q.count
+                    }))
+                    .sort((a, b) => a.avg_effectiveness - b.avg_effectiveness)
+                    .slice(0, 10);
+
+                const newAnalytics = {
+                    total_sessions: totalSessions,
+                    avg_questions_to_threshold: avgQuestions,
+                    success_rate: successRate,
+                    top_questions: topQuestions,
+                    last_updated: new Date().toISOString()
+                };
+
+                setAnalytics(newAnalytics);
+                dbHelpers.setAnalytics(newAnalytics);
+            };
+
+            // Save complete session data
+            const saveSession = async (sessionData) => {
+                const newSession = {
+                    ...sessionData,
+                    session_id: `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    timestamp: new Date().toISOString()
+                };
+
+                // Save to IndexedDB
+                await dbHelpers.addSession(newSession);
+
+                // Update local state
+                setSessions(prev => {
+                    const newSessions = [...prev, newSession];
+                    const sessionsToKeep = newSessions.slice(-100);
+
+                    // Update aggregate analytics
+                    updateAnalytics(sessionsToKeep);
+
+                    return sessionsToKeep;
+                });
+            };
+
+            // Export data for analysis (ML training)
+            const exportData = () => {
+                const data = {
+                    version: "1.0",
+                    exported_at: new Date().toISOString(),
+                    question_stats: questionStats,
+                    sessions: sessions,
+                    analytics: analytics
+                };
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `chatbot_learning_data_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+
+            // Clear all data (with confirmation)
+            const clearAllData = async () => {
+                if (confirm('⚠️ This will permanently delete all learning data, sessions, and analytics. Are you sure?')) {
+                    await dbHelpers.clearAll();
+                    setQuestionStats({});
+                    setSessions([]);
+                    setAnalytics({
+                        total_sessions: 0,
+                        avg_questions_to_threshold: 0,
+                        success_rate: 0,
+                        top_questions: [],
+                        effectiveness_over_time: []
+                    });
+                    alert('✅ All data has been cleared.');
+                }
+            };
+
+            // Select conversational bridge based on context
+            const getConversationalBridge = (context) => {
+                const bridges = {
+                    // Topic transitions
+                    topic_transition: [
+                        "I'm curious about something else...",
+                        "Let me shift to a different angle...",
+                        "Another question...",
+                        "Different topic..."
+                    ],
+                    // Handling "IDK"
+                    idk_response: [
+                        "That's understandable. Let me ask it differently...",
+                        "Fair enough. Different angle then...",
+                        "Okay. How about this way...",
+                        "Noted. Here's another way to look at it..."
+                    ],
+                    // When defensive
+                    defensive_response: [
+                        "I hear you. Let me try a different question...",
+                        "Understood. Want to explore something else?",
+                        "These questions can be challenging. Let's try another angle...",
+                        "I'm noticing some tension. Should we shift direction?"
+                    ],
+                    // When showing insight
+                    insight_acknowledgment: [
+                        "I'm noticing something in what you said. Tell me more about...",
+                        "That's revealing. So if that's true, then...",
+                        "Interesting. That makes me wonder...",
+                        "You mentioned something worth exploring. What else..."
+                    ]
+                };
+
+                const contextType = context.type || 'topic_transition';
+                const options = bridges[contextType] || bridges.topic_transition;
+                return options[Math.floor(Math.random() * options.length)];
+            };
+
+            // Detect user's engagement and awareness level from their answer
+            const analyzeUserResponse = async (answer, question, biasType) => {
+                try {
+                    const prompt = `Analyze this user's answer to determine their engagement and awareness level.
+
+Question asked: "${question}"
+User's answer: "${answer}"
+Bias being addressed: ${biasType}
+
+Analyze:
+1. ENGAGEMENT LEVEL:
+   - "engaged": Thoughtful, detailed answer (3+ sentences or shows reflection)
+   - "neutral": Brief but relevant answer (1-2 sentences, answers the question)
+   - "defensive": Dismissive, resistant, or deflecting ("I don't know", "not sure", "already thought about that")
+   - "fatigued": Very short, minimal effort ("ok", "maybe", "idk", single word)
+
+2. AWARENESS LEVEL:
+   - "high": Shows insight, acknowledges the issue, demonstrates self-awareness
+   - "medium": Partially aware, some recognition but not complete
+   - "low": Unaware, doesn't see the issue, or avoids it
+
+3. NEXT MOVE:
+   - "deeper": Go deeper with insight question (when engaged + any awareness)
+   - "probing": Ask probing question to dig deeper neutrally (when neutral/engaged + medium/high awareness)
+   - "conversational": Use softer conversational question (when defensive)
+   - "wrap": Move to next bias (when fatigued or max questions reached)
+
+Return ONLY this JSON format:
+{
+  "engagement": "engaged|neutral|defensive|fatigued",
+  "awareness": "high|medium|low",
+  "next_move": "deeper|probing|conversational|wrap",
+  "reasoning": "brief explanation"
+}`;
+
+                    const response = await callAnthropicAPI(prompt);
+                    const jsonMatch = response.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        return JSON.parse(jsonMatch[0]);
+                    }
+                    // Default if parsing fails
+                    return {
+                        engagement: "neutral",
+                        awareness: "medium",
+                        next_move: "deeper",
+                        reasoning: "Default response"
+                    };
+                } catch (error) {
+                    console.error('Response analysis error:', error);
+                    return {
+                        engagement: "neutral",
+                        awareness: "medium",
+                        next_move: "deeper",
+                        reasoning: "Error occurred"
+                    };
+                }
+            };
+
+            const askDebiasingQuestions = async (currentBiases, preferredQuestionType = 'insight', previousBias = null) => {
+                // NEW ADAPTIVE APPROACH:
+                // 1. Find highest-scoring bias that hasn't reached max 2 questions
+                // 2. Select appropriate question type based on engagement/awareness
+                // 3. Ask ONE question at a time (not 2)
+
+                // Find biases that haven't reached max questions (2)
+                const availableBiases = currentBiases
+                    .filter(bias => {
+                        const count = biasTracking.countsPerBias[bias.name] || 0;
+                        return count < 2; // Max 2 questions per bias
+                    })
+                    .sort((a, b) => b.score - a.score); // Highest score first
+
+                if (availableBiases.length === 0) {
+                    // All biases have been addressed with max questions, finish session
+                    setPhase('report');
+                    generateFinalReport();
+                    return;
+                }
+
+                // Pick the highest-scoring bias (or continue with previous bias if valid)
+                let targetBias = availableBiases[0];
+                if (previousBias && availableBiases.find(b => b.name === previousBias)) {
+                    const prevBiasCount = biasTracking.countsPerBias[previousBias] || 0;
+                    if (prevBiasCount < 2) {
+                        const foundBias = currentBiases.find(b => b.name === previousBias);
+                        if (foundBias) {
+                            targetBias = foundBias;
+                        }
+                    }
+                }
+
+                if (!targetBias) {
+                    console.error('No target bias found');
+                    setPhase('report');
+                    generateFinalReport();
+                    return;
+                }
+
+                // Update bias tracking atomically (sets current bias and increments count)
+                updateBiasTracking(targetBias.name);
+
+                // Filter questions by target bias, question type, and not already asked
+                const candidateQuestions = QUESTION_BANK
+                    .filter(q => {
+                        return q.biases_addressed.includes(targetBias.name) &&
+                               q.question_type === preferredQuestionType &&
+                               !askedQuestions.includes(q.id);
+                    });
+
+                // If no questions of preferred type, try other types
+                let selectedQuestion;
+                if (candidateQuestions.length > 0) {
+                    selectedQuestion = candidateQuestions[0]; // First match
+                } else {
+                    // Fall back to any question for this bias
+                    const fallbackQuestions = QUESTION_BANK
+                        .filter(q => q.biases_addressed.includes(targetBias.name) && !askedQuestions.includes(q.id));
+                    if (fallbackQuestions.length > 0) {
+                        selectedQuestion = fallbackQuestions[0];
+                    } else {
+                        // No questions available for this bias, move to next
+                        const nextBias = availableBiases[1];
+                        if (nextBias) {
+                            return askDebiasingQuestions(currentBiases, preferredQuestionType, nextBias.name);
+                        } else {
+                            // No more questions available, finish
+                            setPhase('report');
+                            generateFinalReport();
+                            return;
+                        }
+                    }
+                }
+
+                // Personalize the single question
+                setLoadingMessage('🎯 Tailoring question to your situation...');
+                const personalizedQuestions = await personalizeQuestions([selectedQuestion]);
+
+                setAskedQuestions(prev => [...prev, selectedQuestion.id]);
+                setCurrentDebiasingQuestions(personalizedQuestions);
+                setCurrentQuestionIndex(0);
+                setCurrentQuestionDepth(0); // Reset depth for new question
+
+                const question = personalizedQuestions[0].personalizedQuestion || personalizedQuestions[0].question;
+                addBotMessage(question);
+            };
+
+            const handleContextAnswer = () => {
+                if (!currentInput.trim()) return;
+
+                const currentQ = CONTEXT_QUESTIONS[currentContextIndex];
+                addUserMessage(currentInput);
+
+                const newContextAnswers = {
+                    ...contextAnswers,
+                    [currentQ.id]: currentInput
+                };
+
+                setContextAnswers(newContextAnswers);
+                setCurrentInput('');
+                setCurrentContextIndex(prev => prev + 1);
+
+                // ===== EARLY GIBBERISH CHECK AFTER QUESTION 5 =====
+                if (currentContextIndex + 1 === 5) {
+                    // Check the first 5 responses
+                    const first5Responses = Object.values(newContextAnswers);
+
+                    // Run client-side check first (instant, free)
+                    if (checkAllResponsesForGibberish(first5Responses)) {
+                        // Detected obvious gibberish - show error immediately
+                        setTimeout(() => {
+                            addBotMessage(`⚠️ **I'm having trouble understanding your responses.**
+
+Your answers appear to contain random characters or gibberish (like "asdfgh" or "jkl;jkl;").
+
+**This tool works best with genuine, thoughtful answers.** For example:
+- "We're deciding whether to expand to the European market"
+- "The investment would be around $500K"
+- "I'm concerned about the competitive landscape"
+
+**Would you like to:**
+1. **Start over** with real information (recommended)
+2. **Exit**
+
+Type **1** or **2**.`);
+                            setPhase('gibberish_detected');
+                        }, 500);
+                        return;
+                    }
+                }
+            };
+
+            const handleDebiasingAnswer = async () => {
+                if (!currentInput.trim()) return;
+
+                const currentAnswer = currentInput;
+                addUserMessage(currentAnswer);
+                setCurrentInput('');
+
+                // Check if we're answering a synthesis question
+                if (activeSynthesisQuestion) {
+                    addBotMessage("Thanks for thinking that through! That helps me understand your perspective better. Let's keep going...");
+                    setActiveSynthesisQuestion(null);
+
+                    // Get current bias analysis to continue
+                    if (checkpoints.length > 0) {
+                        const latestCheckpoint = checkpoints[checkpoints.length - 1];
+                        await askDebiasingQuestions(latestCheckpoint.biases, 'insight', biasTracking.currentBias);
+                    }
+                    return;
+                }
+
+                // Regular debiasing question handling
+                if (currentDebiasingQuestions.length === 0) return;
+
+                const currentQ = currentDebiasingQuestions[0]; // Always first element since we ask 1 at a time
+                const questionId = currentQ.id;
+                const questionText = currentQ.personalizedQuestion || currentQ.question;
+
+                // Store/update answer with enhanced structure
+                setDebiasingAnswers(prev => {
+                    const existing = prev[questionId] || {
+                        mainAnswer: null,
+                        depth: 0,
+                        followUps: [],
+                        blind_spots_discovered: [],
+                        personalizedQuestion: questionText,
+                        stats_updated: false
+                    };
+
+                    if (currentQuestionDepth === 0) {
+                        return {
+                            ...prev,
+                            [questionId]: {
+                                ...existing,
+                                mainAnswer: currentAnswer,
+                                depth: 0,
+                                personalizedQuestion: questionText
+                            }
+                        };
+                    } else {
+                        return {
+                            ...prev,
+                            [questionId]: {
+                                ...existing,
+                                depth: currentQuestionDepth,
+                                followUps: [
+                                    ...existing.followUps,
+                                    {
+                                        bot: pendingFollowUp?.question || '',
+                                        user: currentAnswer,
+                                        revealed_blind_spot: pendingFollowUp?.reason || ''
+                                    }
+                                ]
+                            }
+                        };
+                    }
+                });
+
+                // Increment debiasing count
+                const newCount = debiasingCount + 1;
+                setDebiasingCount(newCount);
+
+                // Check if follow-up is needed (unless we're at max depth)
+                if (currentQuestionDepth < 2) {
+                    setLoadingMessage('🤔 Analyzing your answer...');
+                    setIsLoading(true);
+
+                    const followUp = await detectFollowUpNeed(questionText, currentAnswer, currentQuestionDepth);
+
+                    setIsLoading(false);
+                    setLoadingMessage('');
+
+                    if (followUp) {
+                        setPendingFollowUp(followUp);
+                        setCurrentQuestionDepth(followUp.depth);
+                        setTimeout(() => {
+                            addBotMessage(followUp.question);
+                        }, 500);
+                        return;
+                    }
+                }
+
+                // No follow-up needed - analyze response and decide next move
+                setPendingFollowUp(null);
+                setCurrentQuestionDepth(0);
+
+                setLoadingMessage('Thinking...');
+                setIsLoading(true);
+
+                const responseAnalysis = await analyzeUserResponse(currentAnswer, questionText, biasTracking.currentBias);
+
+                setIsLoading(false);
+                setLoadingMessage('');
+
+                // Check if we need synthesis question (every 4 main answers)
+                const mainAnswersCount = Object.keys(debiasingAnswers).length;
+                if (mainAnswersCount % 4 === 0 && mainAnswersCount > synthesisCount) {
+                    setSynthesisCount(mainAnswersCount);
+                    setLoadingMessage('🧩 Connecting the dots...');
+                    setIsLoading(true);
+
+                    const synthesisQ = await generateSynthesisQuestion();
+
+                    setIsLoading(false);
+                    setLoadingMessage('');
+
+                    if (synthesisQ) {
+                        setActiveSynthesisQuestion(synthesisQ);
+                        setTimeout(() => {
+                            addBotMessage(synthesisQ);
+                        }, 500);
+                        return;
+                    }
+                }
+
+                // Check if we should re-analyze (every 3 questions)
+                if (newCount % 3 === 0) {
+                    await performReanalysis(newCount);
+                    return;
+                }
+
+                // Decide next move based on response analysis
+                const biasCount = biasTracking.countsPerBias[biasTracking.currentBias] || 0;
+
+                if (responseAnalysis.next_move === 'wrap' || biasCount >= 2) {
+                    // Move to different bias
+                    const bridge = getConversationalBridge({ type: 'topic_transition' });
+                    setTimeout(() => {
+                        addBotMessage(bridge);
+                    }, 300);
+
+                    if (checkpoints.length > 0) {
+                        const latestCheckpoint = checkpoints[checkpoints.length - 1];
+                        setTimeout(() => {
+                            askDebiasingQuestions(latestCheckpoint.biases, 'insight', null);
+                        }, 800);
+                    }
+                } else if (responseAnalysis.next_move === 'deeper' && biasCount < 2) {
+                    // Ask another insight question on same bias
+                    if (responseAnalysis.awareness === 'high') {
+                        const bridge = getConversationalBridge({ type: 'insight_acknowledgment' });
+                        addBotMessage(bridge);
+                    }
+
+                    if (checkpoints.length > 0) {
+                        const latestCheckpoint = checkpoints[checkpoints.length - 1];
+                        setTimeout(() => {
+                            askDebiasingQuestions(latestCheckpoint.biases, 'insight', biasTracking.currentBias);
+                        }, 800);
+                    }
+                } else if (responseAnalysis.next_move === 'probing' && biasCount < 2) {
+                    // Ask probing question to dig deeper neutrally
+                    if (checkpoints.length > 0) {
+                        const latestCheckpoint = checkpoints[checkpoints.length - 1];
+                        setTimeout(() => {
+                            askDebiasingQuestions(latestCheckpoint.biases, 'probing', biasTracking.currentBias);
+                        }, 800);
+                    }
+                } else if (responseAnalysis.next_move === 'conversational') {
+                    // Use softer conversational question
+                    const bridge = getConversationalBridge({ type: 'defensive_response' });
+                    addBotMessage(bridge);
+
+                    if (checkpoints.length > 0) {
+                        const latestCheckpoint = checkpoints[checkpoints.length - 1];
+                        setTimeout(() => {
+                            askDebiasingQuestions(latestCheckpoint.biases, 'conversational', biasTracking.currentBias);
+                        }, 800);
+                    }
+                } else {
+                    // Default: continue with next question
+                    if (checkpoints.length > 0) {
+                        const latestCheckpoint = checkpoints[checkpoints.length - 1];
+                        setTimeout(() => {
+                            askDebiasingQuestions(latestCheckpoint.biases, 'insight', null);
+                        }, 500);
+                    }
+                }
+            };
+
+            // Handle user choice when gibberish is detected
+            const handleGibberishChoice = () => {
+                const choice = currentInput.trim();
+
+                if (choice === '1') {
+                    // Option 1: Start over
+                    setMessages([]);
+                    setPhase('context');
+                    setCurrentContextIndex(0);
+                    setContextAnswers({});
+                    setCheckpoints([]);
+                    setDebiasingCount(0);
+                    setAskedQuestions([]);
+                    setDebiasingAnswers({});
+                    resetBiasTracking();
+                    setCurrentInput('');
+
+                    setTimeout(() => {
+                        addBotMessage("Let's start fresh! I'm here to help you make better decisions by revealing hidden biases in your thinking.");
+                        setTimeout(() => {
+                            addBotMessage(`**Question 1/${CONTEXT_QUESTIONS.length}:** ${CONTEXT_QUESTIONS[0].question}`);
+                        }, 500);
+                    }, 300);
+
+                } else if (choice === '2') {
+                    // Option 2: Exit
+                    setPhase('ended');
+                    setCurrentInput('');
+                    addBotMessage("No problem! Come back when you're ready to work through a real decision. 👋");
+
+                } else {
+                    // Invalid choice
+                    setCurrentInput('');
+                    addBotMessage("Please type **1** or **2** to continue.");
+                }
+            };
+
+            // Handle resuming saved session
+            const handleResumeSession = () => {
+                if (!savedSessionData) return;
+
+                // Restore all state
+                setPhase(savedSessionData.phase);
+                setMessages(savedSessionData.messages);
+                setContextAnswers(savedSessionData.contextAnswers);
+                setCurrentContextIndex(savedSessionData.currentContextIndex);
+                setCheckpoints(savedSessionData.checkpoints);
+                setDebiasingAnswers(savedSessionData.debiasingAnswers);
+                setDebiasingCount(savedSessionData.debiasingCount);
+                setAskedQuestions(savedSessionData.askedQuestions);
+                setCurrentDebiasingQuestions(savedSessionData.currentDebiasingQuestions || []);
+                setCurrentQuestionIndex(savedSessionData.currentQuestionIndex || 0);
+                setCurrentQuestionDepth(savedSessionData.currentQuestionDepth || 0);
+                setBiasTracking(savedSessionData.biasTracking || { currentBias: null, countsPerBias: {} });
+                setActiveSynthesisQuestion(savedSessionData.activeSynthesisQuestion);
+                setSynthesisCount(savedSessionData.synthesisCount || 0);
+
+                setShowResumePrompt(false);
+                setSavedSessionData(null);
+
+                // Show welcome back message
+                setTimeout(() => {
+                    addBotMessage("👋 **Welcome back!** I've restored your previous session. Let's continue where we left off.");
+                }, 300);
+            };
+
+            // Start fresh session (clear saved data)
+            const handleStartFresh = () => {
+                localStorage.removeItem('activeSession');
+                setShowResumePrompt(false);
+                setSavedSessionData(null);
+            };
+
+            // Helper function for atomic bias tracking updates (prevents desynchronization)
+            const updateBiasTracking = (biasName) => {
+                setBiasTracking(prev => ({
+                    currentBias: biasName,
+                    countsPerBias: {
+                        ...prev.countsPerBias,
+                        [biasName]: (prev.countsPerBias[biasName] || 0) + 1
+                    }
+                }));
+            };
+
+            // Reset bias tracking
+            const resetBiasTracking = () => {
+                setBiasTracking({ currentBias: null, countsPerBias: {} });
+            };
+
+            const performReanalysis = async (count) => {
+                setIsLoading(true);
+                setLoadingMessage('💭 Reflecting on your thinking patterns...');
+                setCurrentInput('');
+                setError(null);
+
+                try {
+                    const contextSummary = Object.entries(contextAnswers).map(([key, value]) => {
+                        const q = CONTEXT_QUESTIONS.find(q => q.id === key);
+                        return `${q.question}: ${value}`;
+                    }).join('\n');
+
+                    const debiasingQA = Object.entries(debiasingAnswers).map(([qId, data]) => {
+                        const q = QUESTION_BANK.find(q => q.id === qId);
+                        const mainAnswer = typeof data === 'string' ? data : data.mainAnswer;
+                        let qaText = `Q: ${q?.question || qId}\nA: ${mainAnswer}`;
+
+                        // Include follow-ups if they exist
+                        if (data.followUps && data.followUps.length > 0) {
+                            data.followUps.forEach((fu, idx) => {
+                                qaText += `\n  Follow-up ${idx + 1}: ${fu.bot}\n  Answer: ${fu.user}`;
+                            });
+                        }
+
+                        return qaText;
+                    }).join('\n\n');
+
+                    // Define tool schema for reflection
+                    const reanalysisTool = {
+                        name: "reflect_on_patterns",
+                        description: "Reflect on how cognitive patterns have evolved through exploration",
+                        input_schema: {
+                            type: "object",
+                            properties: {
+                                biases: {
+                                    type: "array",
+                                    description: "Updated observations of 5 cognitive patterns",
+                                    items: {
+                                        type: "object",
+                                        properties: {
+                                            name: {
+                                                type: "string",
+                                                enum: ["overconfidence_bias", "confirmation_bias", "availability_bias", "anchoring_bias", "loss_aversion"],
+                                                description: "Name of the cognitive pattern"
+                                            },
+                                            score: {
+                                                type: "number",
+                                                minimum: 0,
+                                                maximum: 1,
+                                                description: "Updated pattern strength (0-1) - ANY change indicates awareness gained"
+                                            },
+                                            manifestation: {
+                                                type: "string",
+                                                description: "Neutral update on how this pattern appears now (non-judgmental)"
+                                            }
+                                        },
+                                        required: ["name", "score", "manifestation"]
+                                    },
+                                    minItems: 5,
+                                    maxItems: 5
+                                },
+                                summary: {
+                                    type: "string",
+                                    description: "APPRECIATIVE summary of awareness gained (never use 'concern', 'troubling', 'failed')"
+                                }
+                            },
+                            required: ["biases", "summary"]
+                        }
+                    };
+
+                    const prompt = `As a neutral thinking partner, reflect on how this person's awareness of their cognitive patterns has evolved through our exploration.
+
+CRITICAL GUIDELINES:
+- Score changes (up OR down) indicate AWARENESS GAINED - this is success!
+- Someone maintaining their position with new awareness shows SOPHISTICATED thinking
+- Use APPRECIATIVE language focused on insight and growth
+- Never use: "concerning", "troubling", "failed", "should", "must", "risky"
+- Frame maintained patterns as "thoughtfully maintained" or "deliberately chosen"
+- Celebrate deeper understanding, not necessarily changed minds
+
+Original Decision Context:
+${contextSummary}
+
+Exploration Q&A:
+${debiasingQA}
+
+Provide updated pattern observations (scores 0-1) and a summary celebrating the awareness and insights gained through this exploration. Remember: maintaining a decision with new awareness = sophisticated, informed choice!`;
+
+                    const analysis = await callAnthropicAPIWithTools(prompt, reanalysisTool);
+
+                    const checkpoint = {
+                        stage: `After ${count} debiasing questions`,
+                        biases: analysis.biases,
+                        summary: analysis.summary
+                    };
+
+                    setCheckpoints(prev => {
+                        const newCheckpoints = [...prev, checkpoint];
+
+                        // Get user context for effectiveness tracking
+                        const userContext = getUserContext();
+
+                        // Update question effectiveness stats with context
+                        // IMPORTANT: Only update stats for questions that haven't been processed yet
+                        if (prev.length > 0) {
+                            const prevCheckpoint = prev[prev.length - 1];
+                            // Calculate bias reduction for each question asked since last checkpoint
+                            Object.keys(debiasingAnswers).forEach(qId => {
+                                const questionData = debiasingAnswers[qId];
+
+                                // Skip if stats already updated for this question
+                                if (questionData.stats_updated) {
+                                    return;
+                                }
+
+                                const question = QUESTION_BANK.find(q => q.id === qId);
+                                const biasesAddressed = question?.biases_addressed || [];
+                                let totalReduction = 0;
+
+                                // Calculate immediate bias change for this question
+                                const immediateBiasChange = {};
+                                biasesAddressed.forEach(biasName => {
+                                    const prevScore = prevCheckpoint.biases.find(b => b.name === biasName)?.score || 0;
+                                    const currentScore = analysis.biases.find(b => b.name === biasName)?.score || 0;
+                                    const reduction = prevScore - currentScore; // Positive = improvement
+                                    totalReduction += reduction;
+                                    immediateBiasChange[biasName] = reduction;
+                                });
+
+                                const avgReduction = totalReduction / (biasesAddressed.length || 1);
+                                updateQuestionStats(qId, avgReduction, userContext);
+
+                                // Store immediate bias change and mark as updated
+                                setDebiasingAnswers(prevAnswers => ({
+                                    ...prevAnswers,
+                                    [qId]: {
+                                        ...(prevAnswers[qId] || {}),
+                                        immediate_bias_change: immediateBiasChange,
+                                        stats_updated: true  // Mark as processed
+                                    }
+                                }));
+                            });
+                        }
+
+                        return newCheckpoints;
+                    });
+
+                    // Check if we should continue or finish
+                    const topBiases = analysis.biases.sort((a, b) => b.score - a.score).slice(0, 3);
+                    const avgTop3 = topBiases.reduce((sum, b) => sum + b.score, 0) / 3;
+
+                    if (avgTop3 < 0.4 || count >= 10) {
+                        // Session is complete - save session data
+                        const userContext = getUserContext();
+                        const completionTime = sessionStartTime ? Math.round((Date.now() - sessionStartTime) / 60000) : 0;
+
+                        const questionsAskedData = Object.entries(debiasingAnswers).map(([qId, data]) => {
+                            const question = QUESTION_BANK.find(q => q.id === qId);
+                            const mainAnswer = typeof data === 'string' ? data : data.mainAnswer;
+                            // Use the stored personalizedQuestion from debiasingAnswers, fallback to generic question
+                            const personalizedText = data.personalizedQuestion || question?.question || '';
+                            return {
+                                question_id: qId,
+                                personalized_text: personalizedText,
+                                answer_length: (mainAnswer || '').length,
+                                follow_ups: data.followUps ? data.followUps.length : 0,
+                                depth_reached: data.depth || 0,
+                                blind_spots_found: data.blind_spots_discovered || [],
+                                immediate_bias_change: data.immediate_bias_change || {}
+                            };
+                        });
+
+                        const sessionData = {
+                            user_context: userContext,
+                            initial_biases: checkpoints[0]?.biases.reduce((acc, b) => {
+                                acc[b.name] = b.score;
+                                return acc;
+                            }, {}) || {},
+                            questions_asked: questionsAskedData,
+                            final_biases: analysis.biases.reduce((acc, b) => {
+                                acc[b.name] = b.score;
+                                return acc;
+                            }, {}),
+                            total_questions: Object.keys(debiasingAnswers).length,
+                            completion_time_minutes: completionTime,
+                            reached_threshold: avgTop3 < 0.4,
+                            total_bias_reduction: checkpoints[0] ? (
+                                checkpoints[0].biases.reduce((sum, b) => sum + b.score, 0) / checkpoints[0].biases.length -
+                                analysis.biases.reduce((sum, b) => sum + b.score, 0) / analysis.biases.length
+                            ) : 0
+                        };
+
+                        saveSession(sessionData);
+
+                        // Finish and show report
+                        setPhase('report');
+                        setIsLoading(false);
+                        setLoadingMessage('');
+                        generateFinalReport();
+                    } else {
+                        // Continue with more questions
+                        setIsLoading(false);
+                        setLoadingMessage('');
+                        addBotMessage("Great progress! I can see your thinking getting clearer. Let me continue exploring this with you...");
+                        setTimeout(() => askDebiasingQuestions(analysis.biases, 'insight', null), 1000);
+                    }
+
+                } catch (error) {
+                    setIsLoading(false);
+                    setLoadingMessage('');
+                    setError(`❌ **Re-analysis Failed**\n\n${error.message}\n\nPlease check your connection and try again.`);
+                    setRetryAction(() => () => performReanalysis(count));
+                }
+            };
+
+            const generateFinalReport = () => {
+                // Report is now rendered as interactive visualization
+                setIsLoading(false);
+                setLoadingMessage('');
+            };
+
+            const handleKeyPress = (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (phase === 'context') {
+                        handleContextAnswer();
+                    } else if (phase === 'debiasing') {
+                        handleDebiasingAnswer();
+                    }
+                }
+            };
+
+            const getProgressPercentage = () => {
+                // Measure "exploration depth" - how much awareness and insight gained
+                // NOT "bias reduction" - maintaining position with awareness = success!
+
+                if (checkpoints.length < 2) return 0;
+
+                const initial = checkpoints[0];
+                const latest = checkpoints[checkpoints.length - 1];
+
+                // Calculate exploration depth based on:
+                // 1. Number of questions answered (engagement)
+                // 2. Depth of conversation (checkpoints created)
+                // 3. Pattern awareness (any change indicates reflection, even increases)
+
+                const questionsAnswered = Object.keys(debiasingAnswers).length;
+                const maxQuestions = 10; // Typical max
+                const questionProgress = Math.min(100, (questionsAnswered / maxQuestions) * 100);
+
+                // Checkpoint depth (more checkpoints = deeper exploration)
+                const checkpointDepth = Math.min(100, ((checkpoints.length - 1) / 5) * 100);
+
+                // Pattern awareness: ANY score change (up or down) shows awareness gained
+                const initialTopBiases = initial.biases
+                    .sort((a, b) => (b.score || 0) - (a.score || 0))
+                    .slice(0, 3);
+
+                if (initialTopBiases.length === 0) return questionProgress * 0.5 + checkpointDepth * 0.5;
+
+                let totalAwareness = 0;
+                initialTopBiases.forEach(initialBias => {
+                    const latestBias = latest.biases.find(lb => lb.name === initialBias.name);
+                    if (latestBias) {
+                        // Measure absolute change (awareness), not directional improvement
+                        const change = Math.abs((latestBias.score || 0) - (initialBias.score || 0));
+                        totalAwareness += change;
+                    }
+                });
+
+                const awarenessScore = Math.min(100, (totalAwareness / initialTopBiases.length) * 200);
+
+                // Weighted combination: engagement (40%) + depth (30%) + awareness (30%)
+                const explorationDepth = (questionProgress * 0.4) + (checkpointDepth * 0.3) + (awarenessScore * 0.3);
+
+                return Math.min(100, Math.max(0, explorationDepth));
+            };
+
+            // Admin Panel Component
+            const AdminPanel = () => {
+                if (!showAdminPanel) return null;
+
+                const sortedQuestions = Object.entries(questionStats)
+                    .map(([id, stat]) => ({
+                        id,
+                        ...stat
+                    }))
+                    .sort((a, b) => a.avg_effectiveness - b.avg_effectiveness)
+                    .slice(0, 10);
+
+                return (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowAdminPanel(false)}>
+                        <div className="bg-white rounded-lg shadow-xl p-6 max-w-4xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-2xl font-bold text-gray-800">📊 Learning System Statistics</h2>
+                                <button onClick={() => setShowAdminPanel(false)} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+                            </div>
+
+                            {/* Overall Analytics */}
+                            <div className="mb-6 grid grid-cols-3 gap-4">
+                                <div className="bg-blue-50 p-4 rounded-lg">
+                                    <div className="text-sm text-gray-600">Total Sessions</div>
+                                    <div className="text-2xl font-bold text-blue-600">{analytics.total_sessions || 0}</div>
+                                </div>
+                                <div className="bg-green-50 p-4 rounded-lg">
+                                    <div className="text-sm text-gray-600">Success Rate</div>
+                                    <div className="text-2xl font-bold text-green-600">{((analytics.success_rate || 0) * 100).toFixed(1)}%</div>
+                                </div>
+                                <div className="bg-purple-50 p-4 rounded-lg">
+                                    <div className="text-sm text-gray-600">Avg Questions</div>
+                                    <div className="text-2xl font-bold text-purple-600">{(analytics.avg_questions_to_threshold || 0).toFixed(1)}</div>
+                                </div>
+                            </div>
+
+                            {/* Cost Monitoring */}
+                            <div className="mb-6 bg-gradient-to-br from-orange-50 to-yellow-50 border border-orange-200 rounded-lg p-4">
+                                <h3 className="text-lg font-semibold text-gray-800 mb-3">💰 API Cost Tracker</h3>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <div className="text-sm text-gray-600 mb-1">Input Tokens</div>
+                                        <div className="font-mono text-xl font-bold text-gray-800">{tokenUsage.input.toLocaleString()}</div>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Cost: ${(tokenUsage.input / 1_000_000 * 3).toFixed(4)}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-gray-600 mb-1">Output Tokens</div>
+                                        <div className="font-mono text-xl font-bold text-gray-800">{tokenUsage.output.toLocaleString()}</div>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Cost: ${(tokenUsage.output / 1_000_000 * 15).toFixed(4)}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="mt-4 pt-3 border-t border-orange-200">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-700 font-medium">Total Session Cost:</span>
+                                        <span className="text-2xl font-bold text-orange-600">
+                                            ${((tokenUsage.input / 1_000_000 * 3) + (tokenUsage.output / 1_000_000 * 15)).toFixed(4)}
+                                        </span>
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-2">
+                                        Pricing: Claude Sonnet 4.5 @ $3/MTok input, $15/MTok output
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Top Performing Questions */}
+                            <div className="mb-6">
+                                <h3 className="text-lg font-semibold text-gray-800 mb-3">🏆 Top Performing Questions</h3>
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    {sortedQuestions.length === 0 ? (
+                                        <p className="text-gray-500 text-center py-4">No data yet. Complete a session to start learning!</p>
+                                    ) : (
+                                        sortedQuestions.map((q, idx) => (
+                                            <div key={q.id} className="flex justify-between items-center py-2 border-b border-gray-200 last:border-0">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="font-mono text-sm text-gray-500">{q.id}</span>
+                                                    <span className="text-sm">{QUESTION_BANK.find(qb => qb.id === q.id)?.question.substring(0, 60)}...</span>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    <span className={`font-semibold ${q.avg_effectiveness < 0 ? 'text-green-600' : 'text-gray-500'}`}>
+                                                        {(q.avg_effectiveness || 0).toFixed(3)}
+                                                    </span>
+                                                    <span className="text-xs text-gray-500">n={q.times_asked}</span>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Question Stats Details */}
+                            {Object.keys(questionStats).length > 0 && (
+                                <div className="mb-6">
+                                    <h3 className="text-lg font-semibold text-gray-800 mb-3">📈 Effectiveness Trends</h3>
+                                    <div className="bg-gray-50 rounded-lg p-4 text-sm">
+                                        {sortedQuestions.slice(0, 3).map(q => (
+                                            <div key={q.id} className="mb-3 last:mb-0">
+                                                <div className="font-semibold text-gray-700">{q.id}</div>
+                                                <div className="text-xs text-gray-500">
+                                                    Recent trend: {q.effectiveness_trend?.map(t => (t || 0).toFixed(2)).join(' → ') || 'N/A'}
+                                                </div>
+                                                {q.effectiveness_by_context && Object.keys(q.effectiveness_by_context).length > 0 && (
+                                                    <div className="text-xs text-gray-500 mt-1">
+                                                        By context: {Object.entries(q.effectiveness_by_context).map(([ctx, data]) =>
+                                                            `${ctx}: ${(data.avg || 0).toFixed(2)} (n=${data.count})`
+                                                        ).join(', ')}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Data Management */}
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={exportData}
+                                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+                                >
+                                    📥 Export Data for ML Training
+                                </button>
+                                <button
+                                    onClick={clearAllData}
+                                    className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"
+                                >
+                                    🗑️ Clear All Data
+                                </button>
+                            </div>
+
+                            {/* Privacy Notice */}
+                            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-gray-600">
+                                <strong>Privacy:</strong> Only metadata is stored (answer length, follow-up count, blind spots).
+                                Your actual answers are NOT stored. Data is kept locally in your browser.
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="flex flex-col h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+                    {/* Header */}
+                    <div className="bg-white shadow-md px-6 py-4 flex justify-between items-center">
+                        <div>
+                            <h1 className="text-2xl font-bold text-gray-800">Cognitive Debiasing Assistant</h1>
+                            <p className="text-sm text-gray-600">Revealing thinking patterns through bias awareness</p>
+                        </div>
+                        <button
+                            onClick={() => setShowAdminPanel(true)}
+                            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition"
+                            title="View Learning Statistics"
+                        >
+                            📊 Stats
+                        </button>
+                    </div>
+
+                    {/* Resume Session Prompt */}
+                    {showResumePrompt && savedSessionData && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div className="bg-white rounded-lg shadow-2xl p-6 max-w-md mx-4">
+                                <div className="text-center mb-4">
+                                    <div className="text-4xl mb-2">💾</div>
+                                    <h2 className="text-xl font-bold text-gray-800 mb-2">Welcome Back!</h2>
+                                    <p className="text-gray-600">
+                                        I found a previous session from {new Date(savedSessionData.timestamp).toLocaleTimeString()}.
+                                    </p>
+                                </div>
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-sm">
+                                    <div className="font-semibold text-gray-700 mb-2">Saved Progress:</div>
+                                    <ul className="space-y-1 text-gray-600">
+                                        <li>• Phase: <strong>{savedSessionData.phase}</strong></li>
+                                        <li>• Messages: <strong>{savedSessionData.messages.length}</strong></li>
+                                        {savedSessionData.checkpoints.length > 0 && (
+                                            <li>• Checkpoints: <strong>{savedSessionData.checkpoints.length}</strong></li>
+                                        )}
+                                    </ul>
+                                </div>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={handleResumeSession}
+                                        className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition font-medium"
+                                    >
+                                        ✓ Resume
+                                    </button>
+                                    <button
+                                        onClick={handleStartFresh}
+                                        className="flex-1 bg-gray-200 text-gray-700 px-4 py-3 rounded-lg hover:bg-gray-300 transition font-medium"
+                                    >
+                                        ✕ Start Fresh
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Progress Bar */}
+                    {checkpoints.length > 0 && (
+                        <div className="bg-white px-6 py-3 shadow-sm">
+                            <div className="flex justify-between text-sm text-gray-600 mb-1">
+                                <span>Exploration Depth</span>
+                                <span>{getProgressPercentage().toFixed(0)}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-3">
+                                <div
+                                    className="progress-bar bg-blue-500 h-3 rounded-full"
+                                    style={{ width: `${getProgressPercentage()}%` }}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Chat Messages */}
+                    <div className="flex-1 overflow-y-auto px-6 py-4">
+                        {messages.map((msg, idx) => (
+                            <div key={idx} className={`flex mb-4 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`chat-bubble max-w-md px-4 py-3 rounded-lg ${
+                                    msg.type === 'user'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-white text-gray-800 shadow-md'
+                                }`}>
+                                    {msg.type === 'bot' ? (
+                                        <div className="markdown-content" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(msg.text)) }} />
+                                    ) : (
+                                        <div className="whitespace-pre-wrap">{msg.text}</div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+
+                        {isLoading && (
+                            <div className="flex justify-start mb-4">
+                                <div className="bg-white px-4 py-3 rounded-lg shadow-md flex items-center gap-3">
+                                    <div className="spinner"></div>
+                                    <span className="text-gray-700">{loadingMessage}</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {error && (
+                            <div className="flex justify-center mb-4">
+                                <div className="bg-red-50 border border-red-200 px-6 py-4 rounded-lg max-w-md w-full">
+                                    <div className="markdown-content text-red-800 mb-4" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(error)) }} />
+                                    <button
+                                        onClick={() => {
+                                            setError(null);
+                                            if (retryAction) {
+                                                retryAction();
+                                            }
+                                        }}
+                                        className="w-full bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition font-medium"
+                                    >
+                                        🔄 Retry Analysis
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Final Report Visualization */}
+                        {phase === 'report' && checkpoints.length > 0 && (
+                            <FinalReportVisualization checkpoints={checkpoints} />
+                        )}
+
+                        <div ref={chatEndRef} />
+                    </div>
+
+                    {/* Input Area */}
+                    {phase !== 'report' && phase !== 'ended' && !isLoading && !error && (
+                        <div className="bg-white border-t border-gray-200 px-6 py-4">
+                            {/* Skip to Summary button - only during debiasing phase and after at least 1 checkpoint */}
+                            {phase === 'debiasing' && checkpoints.length > 0 && (
+                                <div className="flex justify-end mb-3">
+                                    <button
+                                        onClick={() => {
+                                            setPhase('report');
+                                            generateFinalReport();
+                                        }}
+                                        className="text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition font-medium"
+                                        title="Skip remaining questions and view your summary now"
+                                    >
+                                        ⏭️ Skip to Summary
+                                    </button>
+                                </div>
+                            )}
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={currentInput}
+                                    onChange={(e) => setCurrentInput(e.target.value)}
+                                    onKeyPress={handleKeyPress}
+                                    disabled={isLoading}
+                                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                    placeholder={
+                                        phase === 'gibberish_detected'
+                                            ? "Type 1 or 2..."
+                                            : "Type your answer..."
+                                    }
+                                />
+                                <button
+                                    onClick={() => {
+                                        if (phase === 'context') {
+                                            handleContextAnswer();
+                                        } else if (phase === 'debiasing') {
+                                            handleDebiasingAnswer();
+                                        } else if (phase === 'gibberish_detected') {
+                                            handleGibberishChoice();
+                                        }
+                                    }}
+                                    disabled={isLoading || !currentInput.trim()}
+                                    className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                >
+                                    Send
+                                </button>
+                            </div>
+                            {phase === 'context' && (
+                                <div className="text-sm text-gray-500 mt-2">
+                                    Progress: {currentContextIndex}/{CONTEXT_QUESTIONS.length} questions answered
+                                </div>
+                            )}
+                            {phase === 'debiasing' && (
+                                <div className="text-sm text-gray-500 mt-2">
+                                    {biasTracking.currentBias && (
+                                        <span>Exploring {biasTracking.currentBias.replace('_', ' ')} • </span>
+                                    )}
+                                    {debiasingCount} question{debiasingCount !== 1 ? 's' : ''} asked so far
+                                </div>
+                            )}
+                            {phase === 'gibberish_detected' && (
+                                <div className="text-sm text-orange-600 mt-2 font-medium">
+                                    ⚠️ Waiting for your choice (1 or 2)
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Admin Panel */}
+                    <AdminPanel />
+                </div>
+            );
+        }
+
+        // Render the app
+        ReactDOM.render(<CognitiveDebiasingChatbot />, document.getElementById('root'));
+        } // End of startApp()
+    </script>
+</body>
+</html>

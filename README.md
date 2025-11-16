@@ -158,8 +158,6 @@ The chatbot behavior is configured via `DEBIASING_CONFIG` in `index.html`:
 ### API Configuration
 
 - **Model**: claude-sonnet-4-5-20250929
-- **Max tokens**: 2048 per request
-- **Pricing**: $3/MTok input, $15/MTok output
 
 ## Privacy & Data
 
@@ -174,12 +172,6 @@ Requires a modern browser with:
 - ES6+ JavaScript support
 - IndexedDB support
 - LocalStorage (fallback)
-
-Tested on:
-- Chrome 90+
-- Firefox 88+
-- Safari 14+
-- Edge 90+
 
 ## API Costs
 
@@ -216,15 +208,10 @@ Contributions are welcome! Areas for improvement:
 - Multi-language support
 - Mobile optimization
 
-## License
-
-[Specify your license here]
-
 ## Acknowledgments
 
 - Built with [Anthropic Claude API](https://www.anthropic.com/)
 - Inspired by research in cognitive psychology and behavioral economics
-- Designed for exploratory awareness, not prescriptive correction
 
 ## Support
 
